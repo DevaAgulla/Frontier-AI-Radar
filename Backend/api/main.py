@@ -1,10 +1,12 @@
 """Frontier AI Radar — Simple FastAPI entry point."""
 
+import os
 import json
 import asyncio
 import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, field_validator
 from typing import Any, Dict, List, Optional
@@ -34,6 +36,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Frontier AI Radar API", lifespan=lifespan)
+
+# ── CORS — allow all origins (safe for hackathon; tighten for production) ──
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 _background_runs: Dict[int, asyncio.Task] = {}
 
 AGENT_ORDER = ["research", "competitor", "model", "benchmark"]
@@ -1547,4 +1559,5 @@ async def delete_competitor(competitor_id: int):
 # ── Start ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    uvicorn.run("api.main:app", host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("api.main:app", host="0.0.0.0", port=port)

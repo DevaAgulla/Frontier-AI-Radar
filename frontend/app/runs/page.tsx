@@ -105,7 +105,7 @@ export default function RunsPage() {
     };
     setLoading(true);
     fetchRuns();
-    const interval = globalThis.setInterval(fetchRuns, 5000);
+    const interval = globalThis.setInterval(fetchRuns, 30000);
     return () => {
       active = false;
       globalThis.clearInterval(interval);

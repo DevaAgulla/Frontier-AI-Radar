@@ -92,6 +92,8 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, env="API_PORT")
     api_secret_key: str = Field(..., env="API_SECRET_KEY")
 
+
+
     # Streamlit
     streamlit_port: int = Field(default=8501, env="STREAMLIT_PORT")
 

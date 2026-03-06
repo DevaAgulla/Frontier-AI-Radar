@@ -132,7 +132,14 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ data: runData, status: 201 });
-  } catch {
+  } catch (err) {
+    const isAbort = err instanceof DOMException && err.name === "AbortError";
+    if (isAbort) {
+      return NextResponse.json(
+        { error: "Backend is starting up — please retry in 30 seconds", status: 504 },
+        { status: 504 }
+      );
+    }
     return NextResponse.json(
       { error: "Invalid request body", status: 400 },
       { status: 400 }

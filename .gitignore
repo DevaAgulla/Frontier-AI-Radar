@@ -34,8 +34,12 @@ out/
 # ── IDE ──
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
+
+# ── Review / scratch ──
+review.txt
 
 # ── OS ──
 .DS_Store

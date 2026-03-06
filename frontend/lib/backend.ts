@@ -13,13 +13,20 @@ export function getBackendBaseUrl(): string {
 export async function fetchBackend(path: string, init?: RequestInit): Promise<Response> {
   const base = getBackendBaseUrl();
   const url = `${base}${path}`;
-  return fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-    cache: "no-store",
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000); // 120s timeout for free-tier cold starts
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: init?.signal ?? controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+      cache: "no-store",
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 

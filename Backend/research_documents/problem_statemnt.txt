@@ -334,3 +334,26 @@ Embeddings for dedup: local embedding model or API
 PDF: ReportLab or WeasyPrint (HTML→PDF) 
 Email: SMTP or SendGrid 
 UI: Next.js + FastAPI, or Streamlit for fastest demo 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
