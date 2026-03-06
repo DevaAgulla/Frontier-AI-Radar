@@ -1,8 +1,8 @@
 const DEFAULT_BACKEND_BASE = "http://127.0.0.1:8000/api/v1";
-
+const DEPLOYED_BACKEND_BASE = "https://frontier-ai-radar-production-75c1.up.railway.app/api/v1";
 export function getBackendBaseUrl(): string {
-  const configured = process.env.BACKEND_API_BASE_URL?.replace(/\/$/, "");
-  if (!configured) return DEFAULT_BACKEND_BASE;
+  const configured = DEPLOYED_BACKEND_BASE
+  if (!configured) return DEPLOYED_BACKEND_BASE;
 
   // Accept either full base (.../api/v1) or bare host (...:8000)
   if (/\/api\/v\d+$/i.test(configured)) return configured;
