@@ -1530,7 +1530,7 @@ async def send_email_mcp(
     to: List[str], subject: str, body: str, pdf_path: str
 ) -> Dict[str, Any]:
     """
-    Send email with PDF attachment via SMTP.
+    Send email with PDF attachment via Resend HTTP API or SMTP fallback.
     USE THIS FOR: All email delivery in the notification agent.
     DO NOT USE FOR: Direct API calls to external services.
     RETURNS: {
@@ -1539,11 +1539,16 @@ async def send_email_mcp(
         "error": str (optional)
     }
     """
+    import os
+    import base64
+    import httpx
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
     from email.mime.application import MIMEApplication
     from pathlib import Path
+
+    resend_api_key = os.environ.get("RESEND_API_KEY", "")
 
     try:
         # ── LOG: Entry ──────────────────────────────────────────────
@@ -1552,18 +1557,70 @@ async def send_email_mcp(
         print(f"[EMAIL] To: {to}")
         print(f"[EMAIL] Subject: {subject}")
         print(f"[EMAIL] PDF path: {pdf_path}")
-        print(f"[EMAIL] SMTP host: {settings.smtp_host}:{settings.smtp_port}")
+        print(f"[EMAIL] Method: {'Resend HTTP API' if resend_api_key else 'SMTP'}")
         print(f"[EMAIL] From: {settings.email_from}")
-        print(f"[EMAIL] SMTP user: {settings.smtp_user}")
         print(f"{'='*60}")
+
+        # ── RESEND HTTP API (for cloud platforms that block SMTP) ──
+        if resend_api_key:
+            print("[EMAIL] Using Resend HTTP API (port 443 — never blocked)")
+            from_addr = settings.email_from or "Frontier AI Radar <onboarding@resend.dev>"
+
+            payload: Dict[str, Any] = {
+                "from": from_addr,
+                "to": to,
+                "subject": subject,
+                "html": body,
+            }
+
+            # Attach PDF if it exists
+            pdf_file = Path(pdf_path)
+            if pdf_file.exists():
+                pdf_size = pdf_file.stat().st_size
+                pdf_data = pdf_file.read_bytes()
+                payload["attachments"] = [{
+                    "filename": pdf_file.name,
+                    "content": base64.b64encode(pdf_data).decode("utf-8"),
+                }]
+                print(f"[EMAIL] PDF attached: {pdf_file.name} ({pdf_size} bytes)")
+            else:
+                print(f"[EMAIL] WARNING: PDF file NOT found at {pdf_path}")
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    "https://api.resend.com/emails",
+                    headers={
+                        "Authorization": f"Bearer {resend_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    timeout=30.0,
+                )
+
+            if resp.status_code in (200, 201):
+                resp_data = resp.json()
+                message_id = resp_data.get("id", "resend-ok")
+                print(f"\n[EMAIL] *** EMAIL SENT SUCCESSFULLY via Resend ***")
+                print(f"[EMAIL] Message-ID: {message_id}")
+                print(f"[EMAIL] Recipients: {to}")
+                print(f"[EMAIL] Subject: {subject}")
+                print(f"{'='*60}\n")
+                return {"status": "sent", "message_id": str(message_id), "error": None}
+            else:
+                error_msg = f"Resend API error {resp.status_code}: {resp.text}"
+                print(f"\n[EMAIL] *** RESEND SEND FAILED ***")
+                print(f"[EMAIL] Error: {error_msg}")
+                print(f"{'='*60}\n")
+                return {"status": "failed", "message_id": "", "error": error_msg}
+
+        # ── SMTP FALLBACK (for local development) ──────────────────
+        print(f"[EMAIL] Using SMTP fallback ({settings.smtp_host}:{settings.smtp_port})")
 
         # Build email
         msg = MIMEMultipart()
         msg["From"] = settings.email_from
         msg["To"] = ", ".join(to)
         msg["Subject"] = subject
-
-        # Body as HTML
         msg.attach(MIMEText(body, "html"))
 
         # Attach PDF if it exists
@@ -1581,23 +1638,17 @@ async def send_email_mcp(
         else:
             print(f"[EMAIL] WARNING: PDF file NOT found at {pdf_path}")
 
-        # Send via SMTP (blocking call in executor)
-        # Supports both port 587 (STARTTLS) and port 465 (SSL)
         smtp_port = settings.smtp_port
         print(f"[EMAIL] Connecting to SMTP {settings.smtp_host}:{smtp_port}...")
         loop = asyncio.get_event_loop()
 
         def _send():
             if smtp_port == 465:
-                # SSL connection (port 465) — works on cloud platforms that block 587
-                print("[EMAIL] Using SMTP_SSL (port 465)")
                 with smtplib.SMTP_SSL(settings.smtp_host, smtp_port) as server:
                     server.ehlo()
                     server.login(settings.smtp_user, settings.smtp_password)
                     server.send_message(msg)
             else:
-                # STARTTLS connection (port 587) — standard for local/dev
-                print("[EMAIL] Using SMTP + STARTTLS (port 587)")
                 with smtplib.SMTP(settings.smtp_host, smtp_port) as server:
                     server.ehlo()
                     server.starttls()
@@ -1608,8 +1659,7 @@ async def send_email_mcp(
 
         message_id = await loop.run_in_executor(None, _send)
 
-        # ── LOG: Success ────────────────────────────────────────────
-        print(f"\n[EMAIL] *** EMAIL SENT SUCCESSFULLY ***")
+        print(f"\n[EMAIL] *** EMAIL SENT SUCCESSFULLY via SMTP ***")
         print(f"[EMAIL] Message-ID: {message_id}")
         print(f"[EMAIL] Recipients: {to}")
         print(f"[EMAIL] Subject: {subject}")
@@ -1621,11 +1671,9 @@ async def send_email_mcp(
             "error": None,
         }
     except Exception as e:
-        # ── LOG: Failure ────────────────────────────────────────────
         print(f"\n[EMAIL] *** EMAIL SEND FAILED ***")
         print(f"[EMAIL] Error: {type(e).__name__}: {e}")
         print(f"[EMAIL] Recipients: {to}")
-        print(f"[EMAIL] SMTP: {settings.smtp_host}:{settings.smtp_port}")
         print(f"{'='*60}\n")
 
         return {
