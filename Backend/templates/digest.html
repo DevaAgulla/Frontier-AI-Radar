@@ -33,7 +33,7 @@ body {
 }
 .cover-top {
     background: #eef2ff;
-    padding: 44px 42px 36px;
+    padding: 28px 42px 22px;
     border-bottom: 1px solid #dde6ff;
 }
 .cover-eyebrow {
@@ -86,7 +86,7 @@ body {
     vertical-align: middle;
 }
 .cover-bottom {
-    padding: 24px 42px 30px;
+    padding: 16px 42px 20px;
     background: #f7f9fc;
 }
 
@@ -153,8 +153,7 @@ body {
 
 /* ══════════ TABLE OF CONTENTS ══════════ */
 .toc-page {
-    padding: 36px 42px 40px;
-    page-break-after: always;
+    padding: 20px 42px 24px;
 }
 .page-eyebrow {
     font-size: 7.5pt;
@@ -168,7 +167,7 @@ body {
     font-size: 20pt;
     font-weight: 800;
     color: #1a1d23;
-    margin-bottom: 24px;
+    margin-bottom: 12px;
     letter-spacing: -0.3px;
     border: none;
     padding-bottom: 0;
@@ -231,8 +230,7 @@ body {
 
 /* ══════════ EXEC SUMMARY PAGE ══════════ */
 .exec-page {
-    padding: 32px 42px 36px;
-    page-break-after: always;
+    padding: 18px 42px 20px;
 }
 
 /* KPI row using table */
@@ -240,11 +238,11 @@ body {
     width: 100%;
     border-collapse: separate;
     border-spacing: 10px 0;
-    margin-bottom: 20px;
+    margin-bottom: 12px;
 }
 .kpi-cell {
     border-radius: 8px;
-    padding: 14px;
+    padding: 10px 12px;
     border: 1px solid #edf0f4;
     background: #fff;
     width: 25%;
@@ -272,7 +270,7 @@ body {
 
 .signal-box {
     border-radius: 8px;
-    padding: 16px 18px;
+    padding: 10px 14px;
     border: 1px solid #dde6ff;
     background: #f5f8ff;
 }
@@ -282,7 +280,7 @@ body {
     text-transform: uppercase;
     letter-spacing: 1px;
     color: {{ brand_color }};
-    margin-bottom: 10px;
+    margin-bottom: 6px;
 }
 .sig-item {
     margin-bottom: 7px;
@@ -306,7 +304,7 @@ body {
     margin: 0;
 }
 .sec-band-table td {
-    padding: 18px 42px 14px;
+    padding: 12px 42px 10px;
     vertical-align: middle;
     border-bottom: 1px solid #edf0f4;
 }
@@ -375,13 +373,13 @@ body {
 
 /* ══════════ CARDS ══════════ */
 .cards-area {
-    padding: 16px 42px 24px;
+    padding: 10px 42px 14px;
 }
 
 .card {
     border: 1px solid #edf0f4;
     border-radius: 8px;
-    margin-bottom: 14px;
+    margin-bottom: 10px;
     background: #fff;
     page-break-inside: avoid;
 }
@@ -565,7 +563,7 @@ body {
 table.data-table {
     width: 100%;
     border-collapse: collapse;
-    margin: 14px 0 20px;
+    margin: 8px 0 10px;
     font-size: 9pt;
 }
 table.data-table thead th {
@@ -588,14 +586,14 @@ table.data-table tbody tr:nth-child(even) td {
 
 /* ══════════ APPENDIX ══════════ */
 .appendix {
-    padding: 32px 42px;
+    padding: 18px 42px 20px;
 }
 .appendix h3 {
     font-size: 11pt;
     font-weight: 700;
     color: #1a1d23;
-    margin-bottom: 4px;
-    margin-top: 18px;
+    margin-bottom: 3px;
+    margin-top: 12px;
 }
 .appendix h3:first-of-type {
     margin-top: 0;
@@ -603,14 +601,14 @@ table.data-table tbody tr:nth-child(even) td {
 .appendix p {
     font-size: 9.5pt;
     color: #6b7280;
-    line-height: 1.75;
-    margin-bottom: 6px;
+    line-height: 1.6;
+    margin-bottom: 4px;
 }
 .appendix-footer-table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 22px;
-    padding-top: 14px;
+    margin-top: 14px;
+    padding-top: 10px;
     border-top: 1px solid #edf0f4;
     font-size: 8pt;
     color: #8a92a0;
@@ -655,7 +653,7 @@ a {
     text-decoration: none;
 }
 p {
-    margin: 6px 0 10px;
+    margin: 4px 0 6px;
     font-size: 10pt;
 }
 ul, ol {
@@ -743,7 +741,7 @@ hr {
         <span class="run-header-issue">{{ generation_date }}</span>
     </div>
 
-    <div style="padding:30px 42px 30px">
+    <div style="padding:16px 42px 16px">
         <div class="page-eyebrow">Navigation</div>
         <div class="page-title">Table of Contents</div>
 
@@ -873,8 +871,8 @@ hr {
         </div>
 
         {% if executive_summary %}
-        <div style="margin-top:18px; background:#eff6ff; border-left:4px solid {{ brand_color }}; padding:14px 16px; border-radius:0 6px 6px 0;">
-            <div style="font-size:11pt; font-weight:700; color:{{ brand_color }}; margin-bottom:4px;">Executive Summary</div>
+        <div style="margin-top:10px; background:#eff6ff; border-left:4px solid {{ brand_color }}; padding:10px 14px; border-radius:0 6px 6px 0;">
+            <div style="font-size:11pt; font-weight:700; color:{{ brand_color }}; margin-bottom:3px;">Executive Summary</div>
             <p style="font-size:9.5pt; color:#334155; margin:0;">{{ executive_summary }}</p>
         </div>
         {% endif %}
@@ -961,7 +959,7 @@ hr {
     </div>
 
     <!-- Section band -->
-    <div style="background:{{ sec.bg }}; padding:18px 42px 14px; border-bottom:1px solid #edf0f4;">
+    <div style="background:{{ sec.bg }}; padding:12px 42px 10px; border-bottom:1px solid #edf0f4;">
         <span class="sec-icon" style="background:{{ sec.icon_bg }}">{{ sec.icon }}</span>
         <span class="sec-title" style="color:{{ sec.text_color }}; vertical-align:middle;">{{ sec.label }}</span>
         <span class="sec-count-pill" style="background:{{ sec.tag_bg }}; color:{{ sec.tag_text }};">{{ agent_findings|length }} {{ sec.count_label }} today</span>
@@ -969,8 +967,8 @@ hr {
     </div>
 
     {% if section_narrative %}
-    <div style="padding:12px 42px 4px;">
-        <div style="background:#f5f8ff; border-left:3px solid {{ sec.text_color }}; padding:10px 14px; border-radius:0 6px 6px 0; font-size:9.5pt; color:#4b5563;">
+    <div style="padding:8px 42px 2px;">
+        <div style="background:#f5f8ff; border-left:3px solid {{ sec.text_color }}; padding:8px 12px; border-radius:0 6px 6px 0; font-size:9.5pt; color:#4b5563;">
             {{ section_narrative }}
         </div>
     </div>
@@ -1076,7 +1074,7 @@ hr {
         <span class="run-header-issue">Findings Overview</span>
     </div>
 
-    <div style="padding:30px 42px;">
+    <div style="padding:18px 42px 16px;">
         <div class="page-eyebrow">Quick Reference</div>
         <div class="page-title">Top Findings at a Glance</div>
 
@@ -1142,7 +1140,7 @@ hr {
     </div>
 
     <div class="appendix">
-        <div class="page-eyebrow" style="margin-bottom:14px">Appendix</div>
+        <div class="page-eyebrow" style="margin-bottom:8px">Appendix</div>
 
         <h3>Data Sources &amp; Collection Methodology</h3>
         <p>This digest is compiled via automated multi-agent monitoring of official company blogs (OpenAI, Google DeepMind, Anthropic, Meta AI, Mistral, Cohere, xAI), arXiv RSS feeds filtered by CS.AI / CS.LG / CS.CL categories, the Hugging Face Open LLM Leaderboard v2 API, Semantic Scholar, GitHub trending, HackerNews, and Reddit. Content is ranked by novelty, potential production impact, and strategic relevance using a deterministic impact formula.</p>
