@@ -1582,16 +1582,28 @@ async def send_email_mcp(
             print(f"[EMAIL] WARNING: PDF file NOT found at {pdf_path}")
 
         # Send via SMTP (blocking call in executor)
-        print(f"[EMAIL] Connecting to SMTP {settings.smtp_host}:{settings.smtp_port}...")
+        # Supports both port 587 (STARTTLS) and port 465 (SSL)
+        smtp_port = settings.smtp_port
+        print(f"[EMAIL] Connecting to SMTP {settings.smtp_host}:{smtp_port}...")
         loop = asyncio.get_event_loop()
 
         def _send():
-            with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-                server.ehlo()
-                server.starttls()
-                server.ehlo()
-                server.login(settings.smtp_user, settings.smtp_password)
-                server.send_message(msg)
+            if smtp_port == 465:
+                # SSL connection (port 465) — works on cloud platforms that block 587
+                print("[EMAIL] Using SMTP_SSL (port 465)")
+                with smtplib.SMTP_SSL(settings.smtp_host, smtp_port) as server:
+                    server.ehlo()
+                    server.login(settings.smtp_user, settings.smtp_password)
+                    server.send_message(msg)
+            else:
+                # STARTTLS connection (port 587) — standard for local/dev
+                print("[EMAIL] Using SMTP + STARTTLS (port 587)")
+                with smtplib.SMTP(settings.smtp_host, smtp_port) as server:
+                    server.ehlo()
+                    server.starttls()
+                    server.ehlo()
+                    server.login(settings.smtp_user, settings.smtp_password)
+                    server.send_message(msg)
             return msg.get("Message-ID", "sent-ok")
 
         message_id = await loop.run_in_executor(None, _send)
