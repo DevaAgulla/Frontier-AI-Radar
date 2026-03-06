@@ -3,15 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import type { Finding } from "@/lib/types";
-
-interface LastRun {
-  run_id: number;
-  status: string;
-  started_at: string | null;
-  finished_at: string | null;
-  time_taken: number | null;
-}
+import type { Finding, Run } from "@/lib/types";
 
 function statusColor(status: string) {
   if (status === "completed") return "bg-green-500/15 text-green-400 border-green-500/30";
@@ -21,7 +13,7 @@ function statusColor(status: string) {
 
 export default function DashboardPage() {
   const [topFindings, setTopFindings] = useState<Finding[]>([]);
-  const [lastRun, setLastRun] = useState<LastRun | null>(null);
+  const [lastRun, setLastRun] = useState<Run | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -101,16 +93,14 @@ export default function DashboardPage() {
                     </span>
                   </div>
                   <span className="text-xs text-[var(--text-muted)]">
-                    Run #{lastRun.run_id}
+                    Run #{lastRun.id}
                   </span>
-                  {lastRun.started_at && (
+                  <span className="text-xs text-[var(--text-muted)]">
+                    Started: {new Date(lastRun.started_at).toLocaleString()}
+                  </span>
+                  {lastRun.finished_at && (
                     <span className="text-xs text-[var(--text-muted)]">
-                      Started: {new Date(lastRun.started_at).toLocaleString()}
-                    </span>
-                  )}
-                  {lastRun.time_taken != null && (
-                    <span className="text-xs text-[var(--text-muted)]">
-                      Duration: {lastRun.time_taken}s
+                      Finished: {new Date(lastRun.finished_at).toLocaleString()}
                     </span>
                   )}
                   <Link

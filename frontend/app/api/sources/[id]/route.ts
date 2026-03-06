@@ -7,13 +7,14 @@ import { fetchBackend } from "@/lib/backend";
  */
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const body = await request.json();
     const isActive = body?.is_active ?? true;
     const res = await fetchBackend(
-      `/sources/competitors/${params.id}?is_active=${isActive}`,
+      `/sources/competitors/${id}?is_active=${isActive}`,
       { method: "PUT" }
     );
     const payload = await res.json();
@@ -38,10 +39,11 @@ export async function PUT(
  */
 export async function DELETE(
   _request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const res = await fetchBackend(`/sources/competitors/${params.id}`, {
+    const { id } = await params;
+    const res = await fetchBackend(`/sources/competitors/${id}`, {
       method: "DELETE",
     });
     if (!res.ok) {
