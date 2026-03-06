@@ -1,0 +1,45 @@
+# ── Virtual environments ──
+python-venv/
+venv/
+.venv/
+env/
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# ── Environment / secrets ──
+.env
+.env.*
+!.env.example
+
+# ── Database (local dev) ──
+*.db
+*.sqlite3
+
+# ── Data artifacts ──
+Backend/data/reports/*.pdf
+Backend/data/entity_store/
+Backend/data/long_term/
+
+# ── Node / Next.js ──
+node_modules/
+.next/
+out/
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+
+# ── Zip archives ──
+*.zip

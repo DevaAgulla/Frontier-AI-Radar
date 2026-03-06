@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Frontier AI Radar Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a0f1e; font-family: 'Segoe UI', system-ui, sans-serif; color: #e2e8f0; padding: 32px 24px; }
+
+  h1 { text-align: center; font-size: 2rem; font-weight: 800; letter-spacing: 2px; color: #7dd3fc; margin-bottom: 6px; }
+  .subtitle { text-align: center; font-size: 0.95rem; color: #94a3b8; letter-spacing: 1px; margin-bottom: 28px; }
+
+  /* REACT LOOP */
+  .react-loop { background: #12082a; border: 2px solid #7c3aed55; border-radius: 14px; padding: 18px 20px; margin-bottom: 16px; }
+  .react-title { font-size: 0.85rem; color: #c4b5fd; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
+  .react-steps { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .react-step { font-size: 0.82rem; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 7px 13px; color: #e2e8f0; font-weight: 600; }
+  .react-arrow { color: #7c3aed; font-size: 1.1rem; font-weight: 900; }
+
+  /* STATE BOX */
+  .state-box { background: #0f172a; border: 2px solid #1e3a5f; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .state-title { font-size: 0.85rem; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+  .state-fields { display: flex; flex-wrap: wrap; gap: 7px; }
+  .state-field { font-size: 0.76rem; font-family: monospace; background: #1e293b; padding: 4px 10px; border-radius: 6px; color: #94a3b8; }
+  .state-field.active { color: #7dd3fc; background: #0369a120; border: 1px solid #0369a166; }
+
+  /* LAYER */
+  .layer { border-radius: 14px; border: 2px solid; padding: 18px 18px 18px; margin-bottom: 6px; }
+  .layer-label { font-size: 0.82rem; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .layer-label .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .agents-row { display: flex; flex-wrap: wrap; gap: 12px; }
+
+  .l1 { border-color: #f59e0b55; background: #f59e0b08; } .l1 .layer-label { color: #fbbf24; } .l1 .dot { background: #fbbf24; }
+  .l2 { border-color: #a78bfa55; background: #a78bfa08; } .l2 .layer-label { color: #c4b5fd; } .l2 .dot { background: #c4b5fd; }
+  .l3 { border-color: #34d39955; background: #34d39908; } .l3 .layer-label { color: #6ee7b7; } .l3 .dot { background: #6ee7b7; }
+  .l4 { border-color: #38bdf855; background: #38bdf808; } .l4 .layer-label { color: #7dd3fc; } .l4 .dot { background: #7dd3fc; }
+  .l5 { border-color: #fb718555; background: #fb718508; } .l5 .layer-label { color: #fda4af; } .l5 .dot { background: #fda4af; }
+  .l6 { border-color: #4ade8055; background: #4ade8008; } .l6 .layer-label { color: #86efac; } .l6 .dot { background: #86efac; }
+
+  /* AGENT CARD */
+  .agent { border-radius: 10px; border: 1.5px solid #ffffff22; background: #ffffff0d; padding: 14px 15px; min-width: 200px; flex: 1; transition: all 0.2s; cursor: default; }
+  .agent:hover { border-color: #ffffff55; background: #ffffff18; transform: translateY(-3px); box-shadow: 0 8px 24px #00000066; }
+  .agent-icon { font-size: 1.6rem; margin-bottom: 6px; }
+  .agent-name { font-size: 0.92rem; font-weight: 800; color: #f1f5f9; margin-bottom: 5px; }
+  .agent-goal { font-size: 0.78rem; color: #cbd5e1; line-height: 1.55; margin-bottom: 10px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 5px; }
+  .badge { font-size: 0.68rem; padding: 3px 8px; border-radius: 5px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+  .b-react  { background: #7c3aed33; color: #c4b5fd; border: 1px solid #7c3aed66; }
+  .b-tools  { background: #0369a133; color: #7dd3fc; border: 1px solid #0369a166; }
+  .b-memory { background: #05966933; color: #6ee7b7; border: 1px solid #05966966; }
+  .b-plans  { background: #92400e33; color: #fcd34d; border: 1px solid #92400e66; }
+  .b-verify { background: #9f123633; color: #fda4af; border: 1px solid #9f123666; }
+
+  /* ARROWS */
+  .arrow-down { text-align: center; color: #7dd3fc; font-size: 1.4rem; margin: 8px 0; font-weight: 900; }
+  .arrow-label { text-align: center; font-size: 0.75rem; color: #64748b; margin-bottom: 6px; letter-spacing: 1px; }
+
+  /* CROSS AGENT */
+  .cross-box { background: #130a2a; border: 2px dashed #7c3aed88; border-radius: 12px; padding: 14px 18px; margin: 10px 0; }
+  .cross-title { font-size: 0.85rem; color: #c4b5fd; font-weight: 800; margin-bottom: 8px; }
+  .cross-flow { font-size: 0.8rem; color: #cbd5e1; line-height: 1.7; }
+  .cross-flow code { color: #7dd3fc; background: #0369a122; padding: 1px 6px; border-radius: 4px; font-size: 0.78rem; }
+  .verdict { display: inline-block; margin: 0 4px; font-weight: 700; }
+  .v-yes { color: #4ade80; }
+  .v-warn { color: #fbbf24; }
+  .v-no  { color: #f87171; }
+
+  /* IMPACT FORMULA */
+  .formula-box { background: #120810; border: 1.5px solid #fb718544; border-radius: 10px; padding: 12px 16px; margin-top: 12px; }
+  .formula-title { font-size: 0.8rem; color: #fda4af; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .formula-text { font-size: 0.88rem; font-family: monospace; color: #f1f5f9; }
+  .f1{color:#fbbf24;font-weight:800;} .f2{color:#34d399;font-weight:800;} .f3{color:#38bdf8;font-weight:800;} .f4{color:#c4b5fd;font-weight:800;}
+
+  /* MEMORY */
+  .mem-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-top: 4px; }
+  .mem-card { border-radius: 10px; padding: 14px 15px; border: 1.5px solid; }
+  .mem-st { border-color: #38bdf855; background: #38bdf80a; }
+  .mem-lt { border-color: #a78bfa55; background: #a78bfa0a; }
+  .mem-en { border-color: #34d39955; background: #34d3990a; }
+  .mem-title { font-size: 0.82rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .mem-st .mem-title{color:#38bdf8;} .mem-lt .mem-title{color:#c4b5fd;} .mem-en .mem-title{color:#6ee7b7;}
+  .mem-body { font-size: 0.78rem; color: #cbd5e1; line-height: 1.6; }
+  .mem-tech { font-size: 0.72rem; color: #64748b; margin-top: 6px; font-style: italic; }
+
+  /* TOOLS */
+  .tools-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tool-chip { font-size: 0.76rem; background: #0f172a; border: 1.5px solid #1e3a5f; border-radius: 7px; padding: 5px 12px; color: #7dd3fc; font-family: monospace; }
+
+  /* STACK */
+  .stack-wrap { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .stack-chip { font-size: 0.78rem; background: #1e293b; border: 1.5px solid #334155; border-radius: 8px; padding: 6px 14px; font-weight: 600; }
+
+  /* LEGEND */
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: #94a3b8; font-weight: 600; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+
+  .section-title { font-size: 0.88rem; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 2px; margin: 20px 0 12px; text-align: center; }
+  .divider { border: none; border-top: 1px solid #1e293b; margin: 20px 0; }
+
+  @media(max-width:700px){
+    .mem-grid{grid-template-columns:1fr;}
+    .agent{min-width:100%;}
+  }
+</style>
+</head>
+<body>
+
+<h1>⚡ Frontier AI Radar</h1>
+<p class="subtitle">Fully Agentic Multi-Agent Intelligence System &nbsp;·&nbsp; 12 Agents &nbsp;·&nbsp; 6 Layers &nbsp;·&nbsp; LangGraph + Claude</p>
+
+<!-- LEGEND -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#c4b5fd"></div> ReAct Loop</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#7dd3fc"></div> Tool Calling</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#6ee7b7"></div> Memory R/W</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fcd34d"></div> Re-Planning</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fda4af"></div> Verification</div>
+</div>
+
+<!-- REACT LOOP -->
+<div class="react-loop">
+  <div class="react-title">⟳ Universal Agent Cognitive Loop — Applied to All 12 Agents</div>
+  <div class="react-steps">
+    <div class="react-step">① Observe</div><div class="react-arrow">→</div>
+    <div class="react-step">② Read Memory</div><div class="react-arrow">→</div>
+    <div class="react-step">③ Reason</div><div class="react-arrow">→</div>
+    <div class="react-step">④ Select Tool</div><div class="react-arrow">→</div>
+    <div class="react-step">⑤ Act</div><div class="react-arrow">→</div>
+    <div class="react-step">⑥ Evaluate Quality</div><div class="react-arrow">→</div>
+    <div class="react-step">⑦ Write Memory</div><div class="react-arrow">→</div>
+    <div class="react-step" style="color:#fcd34d;">⑧ Decide: Loop / Emit / Escalate</div>
+  </div>
+</div>
+
+<!-- SHARED STATE -->
+<div class="state-box">
+  <div class="state-title">🔗 LangGraph Shared State — RadarState (All 12 Agents Read & Write)</div>
+  <div class="state-fields">
+    <span class="state-field active">run_id</span>
+    <span class="state-field active">mission_goal</span>
+    <span class="state-field active">strategy_plan</span>
+    <span class="state-field active">discovered_sources[]</span>
+    <span class="state-field active">trend_signals[]</span>
+    <span class="state-field active">competitor_findings[]</span>
+    <span class="state-field active">provider_findings[]</span>
+    <span class="state-field active">research_findings[]</span>
+    <span class="state-field active">hf_findings[]</span>
+    <span class="state-field active">verification_tasks[]</span>
+    <span class="state-field active">verification_verdicts[]</span>
+    <span class="state-field active">ranked_findings[]</span>
+    <span class="state-field active">merged_findings[]</span>
+    <span class="state-field">pdf_path</span>
+    <span class="state-field">email_status</span>
+    <span class="state-field">errors[]</span>
+    <span class="state-field">agent_iterations{}</span>
+  </div>
+</div>
+
+<!-- ── LAYER 1 ── -->
+<div class="arrow-down">▼</div>
+<div class="layer l1">
+  <div class="layer-label"><div class="dot"></div>Layer 1 — Mission Control</div>
+  <div class="agents-row">
+    <div class="agent">
+      <div class="agent-icon">🎯</div>
+      <div class="agent-name">Mission Controller</div>
+      <div class="agent-goal">Oversees the entire daily run. Monitors all agent progress in real time. Detects intelligence gaps. Triggers re-investigations when findings are thin. Has final authority on mission success or failure.</div>
+      <div class="badges">
+        <span class="badge b-react">ReAct Loop</span>
+        <span class="badge b-tools">Tools</span>
+        <span class="badge b-memory">Memory R/W</span>
+        <span class="badge b-plans">Re-Plans</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── LAYER 2 ── -->
+<div class="arrow-down">▼</div>
+<div class="layer l2">
+  <div class="layer-label"><div class="dot"></div>Layer 2 — Planning</div>
+  <div class="agents-row">
+    <div class="agent">
+      <div class="agent-icon">🗺️</div>
+      <div class="agent-name">Strategy Planner</div>
+      <div class="agent-goal">Reads yesterday's findings from long-term memory. Autonomously decides today's monitoring priorities. Adjusts which sources get deep vs. shallow scans. Dynamically re-weights tasks across intelligence agents.</div>
+      <div class="badges">
+        <span class="badge b-react">ReAct Loop</span>
+        <span class="badge b-tools">Tools</span>
+        <span class="badge b-memory">Memory R/W</span>
+        <span class="badge b-plans">Re-Plans</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── LAYER 3 ── -->
+<div class="arrow-down">▼</div>
+<div class="arrow-label">Dispatches to all 3 Discovery Agents in parallel</div>
+<div class="layer l3">
+  <div class="layer-label"><div class="dot"></div>Layer 3 — Discovery &nbsp;(3 Agents · Parallel)</div>
+  <div class="agents-row">
+    <div class="agent">
+      <div class="agent-icon">🔍</div>
+      <div class="agent-name">Source Scout</div>
+      <div class="agent-goal">Dynamically discovers brand new AI sources — blogs, GitHub repos, docs sites. Decides autonomously what to add to the monitored source list. Never relies on static config alone.</div>
+      <div class="badges">
+        <span class="badge b-react">ReAct Loop</span>
+        <span class="badge b-tools">Tools</span>
+        <span class="badge b-memory">Memory R/W</span>
+      </div>
+    </div>
+    <div class="agent">
+      <div class="agent-icon">📡</div>
+      <div class="agent-name">Feed Monitor</div>
+      <div class="agent-goal">Monitors all RSS/Atom feeds, changelog pages, and release note URLs. Detects content fingerprint changes. Routes newly detected updates to the correct intelligence agents.</div>
+      <div class="badges">
+        <span class="badge b-react">ReAct Loop</span>
+        <span class="badge b-tools">Tools</span>
+        <span class="badge b-memory">Memory R/W</span>
+      </div>
+    </div>
+    <div class="agent">
+      <div class="agent-icon">📈</div>
+      <div class="agent-name">Trend Scout</div>
+      <div class="agent-goal">Scans HackerNews, Reddit r/MachineLearning, GitHub Trending, and AI forums. Detects early signals of emerging technologies — often before official announcements appear.</div>
+      <div class="badges">
+        <span class="badge b-react">ReAct Loop</span>
+        <span class="badge b-tools">Tools</span>
+        <span class="badge b-memory">Memory R/W</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── LAYER 4 ── -->
+<div class="arrow-down">▼</div>
+<div class="arrow-label">Enriched source list flows to all 4 Intelligence Agents in parallel</div>
+<div class="layer l4">
+  <div class="layer-label"><div class="dot"></div>Layer 4 — Intelligence Analysis &nbsp;(4 Agents · Parallel)</div>
+  <div class="agents-row">
+    <div class="agent">
+      <div class="agent-icon">🏢</div>
+      <div class="agent-name">Competitor Intelligence</div>
+      <div class="agent-goal">Tracks competitor product blogs, changelogs, and docs. Autonomously follows deep links to find real release content. Classifies each update: GA / Beta / Pricing / API / Safety.</div>
+      <div class="badges">
+        <span class="badge b-react">ReAct Loop</span>
+        <span class="badge b-tools">Tools</span>
+        <span class="badge b-memory">Memory R/W</span>
+      </div>
+    </div>
+    <div class="agent">
+      <div class="agent-icon">🤖</div>
+      <div class="agent-name">Model Intelligence</div>
+      <div class="agent-goal">Tracks model launches, API updates, pricing shifts, context windows. Extracts structured specs. Flags every benchmark / SOTA claim into verification_tasks[] for Agent 5 to check.</div>
+      <div class="badges">
+        <span class="badge b-react">ReAct Loop</span>
+        <span class="badge b-tools">Tools</span>
+        <span class="badge b-memory">Memory R/W</span>
+        <span class="badge b-verify">Flags Claims →</span>
+      </div>
+    </div>
+    <div class="agent">
+      <div class="agent-icon">📄</div>
+      <div class="agent-name">Research Intelligence</div>
+      <div class="agent-goal">Searches arXiv, Semantic Scholar, OpenReview. Scores every paper against org-relevance rubric. For high-score papers (≥ 0.8), autonomously follows citation trails to find related work.</div>
+      <div class="badges">
+        <span class="badge b-react">ReAct Loop</span>
+        <span class="badge b-tools">Tools</span>
+        <span class="badge b-memory">Memory R/W</span>
+      </div>
+    </div>
+    <div class="agent">
+      <div class="agent-icon">📊</div>
+      <div class="agent-name">Benchmark Intelligence</div>
+      <div class="agent-goal">Monitors HuggingFace leaderboards for rank movements, new SOTA entries, and model family trends. Automatically adds reproducibility caveats for leaderboard gaming or mismatched eval settings.</div>
+      <div class="badges">
+        <span class="badge b-react">ReAct Loop</span>
+        <span class="badge b-tools">Tools</span>
+        <span class="badge b-memory">Memory R/W</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CROSS AGENT COMMUNICATION -->
+<div class="cross-box">
+  <div class="cross-title">⚡ Cross-Agent Communication — Genuine Agentic Moment at Runtime</div>
+  <div class="cross-flow">
+    <strong style="color:#7dd3fc;">Model Intelligence</strong> detects a SOTA claim &nbsp;→&nbsp;
+    writes to <code>verification_tasks[]</code> in shared state &nbsp;→&nbsp;
+    <strong style="color:#fda4af;">Verification Agent</strong> reads it at runtime &nbsp;→&nbsp;
+    fetches HF leaderboard independently &nbsp;→&nbsp;
+    returns verdict: &nbsp;
+    <span class="verdict v-yes">✅ Verified</span> /
+    <span class="verdict v-warn">⚠️ Partial</span> /
+    <span class="verdict v-no">❌ Contradicted</span> /
+    <span style="color:#94a3b8;font-weight:700;">❓ Not Found</span>
+    &nbsp;→&nbsp; verdict written into <code>verification_verdicts[]</code> &nbsp;→&nbsp;
+    <strong style="color:#86efac;">Digest Agent</strong> includes it in the final PDF with evidence
+  </div>
+</div>
+
+<!-- ── LAYER 5 ── -->
+<div class="arrow-down">▼</div>
+<div class="layer l5">
+  <div class="layer-label"><div class="dot"></div>Layer 5 — Validation &amp; Ranking &nbsp;(2 Agents)</div>
+  <div class="agents-row">
+    <div class="agent">
+      <div class="agent-icon">✅</div>
+      <div class="agent-name">Verification Agent</div>
+      <div class="agent-goal">Receives all verification_tasks[] dispatched by Model Intelligence. Independently checks each SOTA claim against live HuggingFace leaderboard data. Returns an evidence-backed verdict with exact scores and source URLs.</div>
+      <div class="badges">
+        <span class="badge b-react">ReAct Loop</span>
+        <span class="badge b-tools">Tools</span>
+        <span class="badge b-memory">Memory R/W</span>
+        <span class="badge b-verify">Issues Verdicts</span>
+      </div>
+    </div>
+    <div class="agent">
+      <div class="agent-icon">🏆</div>
+      <div class="agent-name">Ranking Agent</div>
+      <div class="agent-goal">Applies the Impact Score formula across all findings from all 4 intelligence agents. Performs semantic deduplication. Clusters findings by topic and entity. Surfaces the top findings per category for the Digest Agent.</div>
+      <div class="badges">
+        <span class="badge b-react">ReAct Loop</span>
+        <span class="badge b-tools">Tools</span>
+        <span class="badge b-memory">Memory R/W</span>
+      </div>
+    </div>
+  </div>
+  <div class="formula-box">
+    <div class="formula-title">Impact Score Formula — Ranking Agent</div>
+    <div class="formula-text">
+      Impact &nbsp;=&nbsp; <span class="f1">0.35 × Relevance</span> &nbsp;+&nbsp; <span class="f2">0.25 × Novelty</span> &nbsp;+&nbsp; <span class="f3">0.20 × Credibility</span> &nbsp;+&nbsp; <span class="f4">0.20 × Actionability</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── LAYER 6 ── -->
+<div class="arrow-down">▼</div>
+<div class="layer l6">
+  <div class="layer-label"><div class="dot"></div>Layer 6 — Synthesis &amp; Delivery &nbsp;(3 Agents)</div>
+  <div class="agents-row">
+    <div class="agent">
+      <div class="agent-icon">📝</div>
+      <div class="agent-name">Digest Agent</div>
+      <div class="agent-goal">Synthesizes all ranked findings into a coherent narrative. Identifies today's dominant theme across AI industry. Detects if output reads like a plain list — and autonomously rewrites it as a story. Dual output: JSON for storage, Markdown for PDF.</div>
+      <div class="badges">
+        <span class="badge b-react">ReAct Loop</span>
+        <span class="badge b-tools">Tools</span>
+        <span class="badge b-memory">Memory R/W</span>
+        <span class="badge b-plans">Re-Writes if List</span>
+      </div>
+    </div>
+    <div class="agent">
+      <div class="agent-icon">📄</div>
+      <div class="agent-name">Report Generator</div>
+      <div class="agent-goal">Renders the final branded PDF. Structure: Cover Page → Executive Summary → Competitor Updates → Model Releases → Research Highlights → Benchmark Movements → Appendix. Uses WeasyPrint HTML→PDF.</div>
+      <div class="badges">
+        <span class="badge b-tools">Tools</span>
+        <span class="badge b-memory">Memory R/W</span>
+      </div>
+    </div>
+    <div class="agent">
+      <div class="agent-icon">📬</div>
+      <div class="agent-name">Notification Agent</div>
+      <div class="agent-goal">Sends email to configured distribution list with inline executive summary and PDF attachment. Updates the web dashboard. Archives the digest. Implements retry queue on delivery failure.</div>
+      <div class="badges">
+        <span class="badge b-tools">Tools</span>
+        <span class="badge b-memory">Memory R/W</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MEMORY -->
+<hr class="divider"/>
+<div class="section-title">🧠 3-Layer Memory Architecture — Wired Into Every Agent's ReAct Loop</div>
+<div class="mem-grid">
+  <div class="mem-card mem-st">
+    <div class="mem-title">⚡ Short-Term Memory</div>
+    <div class="mem-body">
+      Stores all findings from the current run only.<br/><br/>
+      Agents read before acting to avoid duplicate fetches within the same run.<br/><br/>
+      Automatically cleared after the run completes.
+    </div>
+    <div class="mem-tech">Implementation: LangGraph State (in-process TypedDict)</div>
+  </div>
+  <div class="mem-card mem-lt">
+    <div class="mem-title">📚 Long-Term Memory</div>
+    <div class="mem-body">
+      Stores historical findings, past digests, and trend baselines across runs.<br/><br/>
+      Strategy Planner reads to adjust today's priorities.<br/><br/>
+      Digest Agent reads to write "What changed since yesterday."
+    </div>
+    <div class="mem-tech">Implementation: PostgreSQL + pgvector index</div>
+  </div>
+  <div class="mem-card mem-en">
+    <div class="mem-title">🏷️ Entity Memory</div>
+    <div class="mem-body">
+      Tracks known organizations, models, benchmarks, and papers with embeddings.<br/><br/>
+      Every agent reads entity context before summarizing a finding.<br/><br/>
+      Enables awareness like: "GPT-5 is OpenAI's 5th generation model."
+    </div>
+    <div class="mem-tech">Implementation: ChromaDB (vector embeddings) + Postgres</div>
+  </div>
+</div>
+
+<!-- TOOLS -->
+<hr class="divider"/>
+<div class="section-title">🔧 Shared Tool System — Dynamically Selected by Each Agent via LLM Reasoning</div>
+<div class="tools-wrap">
+  <span class="tool-chip">fetch_webpage(url)</span>
+  <span class="tool-chip">fetch_rss_feed(url)</span>
+  <span class="tool-chip">fetch_headless(url)</span>
+  <span class="tool-chip">search_web(query)</span>
+  <span class="tool-chip">search_arxiv(query, categories)</span>
+  <span class="tool-chip">search_semantic_scholar(query)</span>
+  <span class="tool-chip">fetch_hf_leaderboard(name)</span>
+  <span class="tool-chip">compare_leaderboard_snapshots(task, d1, d2)</span>
+  <span class="tool-chip">fetch_hf_model_card(id)</span>
+  <span class="tool-chip">search_github_trending()</span>
+  <span class="tool-chip">search_hackernews(query)</span>
+  <span class="tool-chip">search_reddit(subreddit, query)</span>
+  <span class="tool-chip">extract_text(html)</span>
+  <span class="tool-chip">diff_content(old, new)</span>
+  <span class="tool-chip">read_memory(type, key)</span>
+  <span class="tool-chip">write_memory(type, key, value)</span>
+  <span class="tool-chip">flag_verification_task(claim)</span>
+  <span class="tool-chip">compute_impact_score(finding)</span>
+  <span class="tool-chip">extract_pdf_text(url)</span>
+  <span class="tool-chip">render_pdf(html)</span>
+  <span class="tool-chip">send_email(to, subject, body, pdf)</span>
+</div>
+
+<!-- STACK -->
+<hr class="divider"/>
+<div class="section-title">⚙️ Technology Stack</div>
+<div class="stack-wrap">
+  <span class="stack-chip" style="color:#7dd3fc;">LangGraph — Agent Graph Orchestration</span>
+  <span class="stack-chip" style="color:#c4b5fd;">Claude API — LLM Reasoning Engine</span>
+  <span class="stack-chip" style="color:#6ee7b7;">ChromaDB — Entity + Vector Memory</span>
+  <span class="stack-chip" style="color:#fcd34d;">PostgreSQL — Long-Term Storage</span>
+  <span class="stack-chip" style="color:#fda4af;">FastAPI — Backend REST API</span>
+  <span class="stack-chip" style="color:#86efac;">Streamlit — Web UI Dashboard</span>
+  <span class="stack-chip" style="color:#f59e0b;">WeasyPrint — Branded PDF Generation</span>
+  <span class="stack-chip" style="color:#94a3b8;">LangSmith — Full Observability + Traces</span>
+</div>
+
+</body>
+</html>

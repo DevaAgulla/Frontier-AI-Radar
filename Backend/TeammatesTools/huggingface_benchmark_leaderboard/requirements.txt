@@ -1,0 +1,5 @@
+# Hugging Face Benchmark & Leaderboard Tracker
+# All data is fetched in real time from Hugging Face APIs — no dummy data, no external LLM.
+
+huggingface_hub>=0.25.0
+datasets>=2.14.0

@@ -1,0 +1,68 @@
+# Hugging Face Benchmark & Leaderboard Tracker
+Generated: 2026-03-05 11:37:40 UTC
+All data is fetched in real time from Hugging Face APIs/datasets (no dummy data).
+
+## Caveats
+- Leaderboard: compare same category (base vs chat vs merged) and precision.
+- Different eval settings and submission times can affect rankings.
+- Eval results on model cards may be from different benchmarks than the Open LLM Leaderboard.
+
+
+## Open LLM Leaderboard (live from HF dataset open-llm-leaderboard/contents)
+
+  1. 0-hero_Matter-0.2-7B-DPO_bfloat16 |   Average ⬆️=8.90636130175029 |   Hub ❤️=3 |   #Params (B)=7.242 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=True |   CO₂ cost (kg)=1.219174164123715
+  2. 01-ai_Yi-1.5-34B_bfloat16 |   Average ⬆️=25.64649419429311 |   Hub ❤️=46 |   #Params (B)=34.389 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=False |   CO₂ cost (kg)=22.7033978747449
+  3. 01-ai_Yi-1.5-34B-32K_bfloat16 |   Average ⬆️=26.727912908508134 |   Hub ❤️=36 |   #Params (B)=34.389 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=False |   CO₂ cost (kg)=23.15462857509891
+  4. 01-ai_Yi-1.5-34B-Chat_bfloat16 |   Average ⬆️=33.35799367075618 |   Hub ❤️=268 |   #Params (B)=34.389 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=True |   CO₂ cost (kg)=22.423843867327744
+  5. 01-ai_Yi-1.5-34B-Chat-16K_bfloat16 |   Average ⬆️=29.403554842710225 |   Hub ❤️=26 |   #Params (B)=34.389 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=True |   CO₂ cost (kg)=6.774022458148835
+  6. 01-ai_Yi-1.5-6B_bfloat16 |   Average ⬆️=16.745698054972127 |   Hub ❤️=30 |   #Params (B)=6.061 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=False |   CO₂ cost (kg)=1.8442095716487765
+  7. 01-ai_Yi-1.5-6B-Chat_bfloat16 |   Average ⬆️=22.784006289829847 |   Hub ❤️=41 |   #Params (B)=6.061 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=True |   CO₂ cost (kg)=1.4447911071090622
+  8. 01-ai_Yi-1.5-9B_bfloat16 |   Average ⬆️=22.153901514184795 |   Hub ❤️=48 |   #Params (B)=8.829 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=False |   CO₂ cost (kg)=1.4688920320817076
+  9. 01-ai_Yi-1.5-9B-32K_bfloat16 |   Average ⬆️=19.809786285875365 |   Hub ❤️=18 |   #Params (B)=8.829 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=False |   CO₂ cost (kg)=1.5680734132696938
+  10. 01-ai_Yi-1.5-9B-Chat_bfloat16 |   Average ⬆️=29.530872220260978 |   Hub ❤️=141 |   #Params (B)=8.829 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=True |   CO₂ cost (kg)=1.453543490910605
+  11. 01-ai_Yi-1.5-9B-Chat-16K_bfloat16 |   Average ⬆️=23.76539234993476 |   Hub ❤️=35 |   #Params (B)=8.829 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=True |   CO₂ cost (kg)=1.5847450134017533
+  12. 01-ai_Yi-34B_bfloat16 |   Average ⬆️=22.373127018936653 |   Hub ❤️=1293 |   #Params (B)=34.389 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=False |   CO₂ cost (kg)=25.657483288779545
+  13. 01-ai_Yi-34B-200K_bfloat16 |   Average ⬆️=20.01347533597433 |   Hub ❤️=318 |   #Params (B)=34.389 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=False |   CO₂ cost (kg)=25.50385584712952
+  14. 01-ai_Yi-34B-Chat_bfloat16 |   Average ⬆️=24.226662652803373 |   Hub ❤️=350 |   #Params (B)=34.389 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=True |   CO₂ cost (kg)=25.125695689981566
+  15. 01-ai_Yi-6B_bfloat16 |   Average ⬆️=13.611617485376058 |   Hub ❤️=372 |   #Params (B)=6.061 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=False |   CO₂ cost (kg)=1.0985492537000408
+  16. 01-ai_Yi-6B-200K_bfloat16 |   Average ⬆️=11.996098298832841 |   Hub ❤️=172 |   #Params (B)=6.061 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=False |   CO₂ cost (kg)=1.1264239806184515
+  17. 01-ai_Yi-6B-Chat_bfloat16 |   Average ⬆️=14.11765000523676 |   Hub ❤️=65 |   #Params (B)=6.061 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=True |   CO₂ cost (kg)=1.1106656722436012
+  18. 01-ai_Yi-9B_bfloat16 |   Average ⬆️=17.811867367746064 |   Hub ❤️=185 |   #Params (B)=8.829 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=False |   CO₂ cost (kg)=1.530663961417017
+  19. 01-ai_Yi-9B-200K_bfloat16 |   Average ⬆️=17.72955178611439 |   Hub ❤️=75 |   #Params (B)=8.829 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=False |   CO₂ cost (kg)=1.5489823437933046
+  20. 01-ai_Yi-Coder-9B-Chat_bfloat16 |   Average ⬆️=16.985989314863886 |   Hub ❤️=198 |   #Params (B)=8.829 |   Available on the hub=True |   MoE=False |   Flagged=False |   Chat Template=True |   CO₂ cost (kg)=1.8195322295921676
+
+(Tasks: ARC, HellaSwag, MMLU, TruthfulQA, Winogrande, GSM8k — per Open LLM Leaderboard.)
+Caveat: Compare same model type and precision; leaderboard can have submission timing bias.
+
+## Trending / popular models (live from HF API list_models)
+
+  1. Qwen/Qwen3.5-35B-A3B | downloads=885293 | likes=954 | tag=image-text-to-text
+  2. Qwen/Qwen3.5-9B | downloads=340783 | likes=435 | tag=image-text-to-text
+  3. unsloth/Qwen3.5-35B-A3B-GGUF | downloads=792060 | likes=511 | tag=image-text-to-text
+  4. Qwen/Qwen3.5-27B | downloads=467468 | likes=582 | tag=image-text-to-text
+  5. Qwen/Qwen3.5-0.8B | downloads=187548 | likes=250 | tag=image-text-to-text
+  6. Qwen/Qwen3.5-4B | downloads=165694 | likes=234 | tag=image-text-to-text
+  7. unsloth/Qwen3.5-9B-GGUF | downloads=283069 | likes=175 | tag=image-text-to-text
+  8. huihui-ai/Huihui-Qwen3.5-35B-A3B-abliterated | downloads=20133 | likes=166 | tag=image-text-to-text
+  9. Qwen/Qwen3.5-397B-A17B | downloads=1338447 | likes=1231 | tag=image-text-to-text
+  10. Nanbeige/Nanbeige4.1-3B | downloads=443657 | likes=953 | tag=text-generation
+  11. MiniMaxAI/MiniMax-M2.5 | downloads=354326 | likes=1094 | tag=text-generation
+  12. zai-org/GLM-5 | downloads=210176 | likes=1711 | tag=text-generation
+  13. unsloth/Qwen3.5-27B-GGUF | downloads=352050 | likes=232 | tag=image-text-to-text
+  14. Qwen/Qwen3.5-2B | downloads=80928 | likes=134 | tag=image-text-to-text
+  15. perplexity-ai/pplx-embed-v1-0.6b | downloads=14475 | likes=124 | tag=feature-extraction
+
+## Official / benchmark evaluation datasets (live from HF API list_datasets)
+
+  1. cais/hle | downloads=42859 | likes=736
+  2. allenai/olmOCR-bench | downloads=2871 | likes=113
+  3. openai/gsm8k | downloads=496974 | likes=1181
+  4. TIGER-Lab/MMLU-Pro | downloads=94104 | likes=441
+  5. SWE-bench/SWE-bench_Verified | downloads=116521 | likes=16
+  6. Idavidrein/gpqa | downloads=88578 | likes=373
+  7. ScaleAI/SWE-bench_Pro | downloads=47029 | likes=54
+  8. MathArena/aime_2026 | downloads=3504 | likes=20
+  9. harborframework/terminal-bench-2.0 | downloads=1426 | likes=5
+  10. mteb/arguana | downloads=8015 | likes=2
+  11. FutureMa/EvasionBench | downloads=586 | likes=117
+  12. MathArena/hmmt_feb_2026 | downloads=326 | likes=0

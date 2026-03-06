@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Frontier AI Radar — Architecture Report</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  :root {
+    --blue: #2563eb; --blue-light: #eff6ff; --blue-mid: #bfdbfe;
+    --purple: #7c3aed; --purple-light: #f5f3ff; --purple-mid: #ddd6fe;
+    --green: #059669; --green-light: #ecfdf5; --green-mid: #a7f3d0;
+    --amber: #d97706; --amber-light: #fffbeb; --amber-mid: #fde68a;
+    --red: #dc2626; --red-light: #fef2f2; --red-mid: #fecaca;
+    --slate: #475569; --slate-light: #f8fafc; --border: #e2e8f0;
+    --text: #0f172a; --text-mid: #475569; --text-light: #94a3b8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: #fff;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  /* ── PRINT BUTTON ── */
+  .print-bar {
+    position: fixed; top: 0; left: 0; right: 0;
+    background: #1e293b; padding: 10px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    z-index: 999; gap: 12px;
+  }
+  .print-bar span { color: #94a3b8; font-size: 0.82rem; }
+  .print-btn {
+    background: #2563eb; color: #fff; border: none;
+    padding: 8px 22px; border-radius: 7px; font-size: 0.85rem;
+    font-weight: 700; cursor: pointer; letter-spacing: 0.5px;
+  }
+  .print-btn:hover { background: #1d4ed8; }
+
+  /* ── PAGE WRAPPER ── */
+  .doc { max-width: 900px; margin: 60px auto 40px; padding: 0 32px; }
+
+  /* ── COVER ── */
+  .cover {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+    border-radius: 16px; padding: 56px 48px; margin-bottom: 40px; position: relative; overflow: hidden;
+  }
+  .cover::before {
+    content: ''; position: absolute; top: -60px; right: -60px;
+    width: 300px; height: 300px; border-radius: 50%;
+    background: radial-gradient(circle, #7c3aed22, transparent 70%);
+  }
+  .cover-tag { font-size: 0.72rem; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: #7dd3fc; margin-bottom: 14px; }
+  .cover h1 { font-size: 2.4rem; font-weight: 900; color: #f1f5f9; line-height: 1.15; margin-bottom: 10px; }
+  .cover h1 span { color: #7dd3fc; }
+  .cover-sub { font-size: 1rem; color: #94a3b8; margin-bottom: 28px; line-height: 1.5; }
+  .cover-meta { display: flex; flex-wrap: wrap; gap: 10px; }
+  .cover-badge { background: #ffffff15; border: 1px solid #ffffff25; border-radius: 7px; padding: 6px 14px; font-size: 0.78rem; color: #cbd5e1; font-weight: 600; }
+
+  /* ── SECTION HEADERS ── */
+  .section-num { font-size: 0.7rem; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; color: var(--blue); margin-bottom: 4px; }
+  h2 { font-size: 1.5rem; font-weight: 900; color: var(--text); margin-bottom: 6px; }
+  h3 { font-size: 1.05rem; font-weight: 800; color: var(--text); margin-bottom: 8px; }
+  h4 { font-size: 0.88rem; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  .section-intro { font-size: 0.9rem; color: var(--slate); margin-bottom: 24px; line-height: 1.7; }
+  .divider { border: none; border-top: 2px solid var(--border); margin: 36px 0; }
+
+  /* ── CALLOUT BOXES ── */
+  .callout { border-radius: 10px; padding: 16px 20px; margin: 16px 0; border-left: 4px solid; }
+  .callout-blue   { background: var(--blue-light);   border-color: var(--blue);   }
+  .callout-purple { background: var(--purple-light); border-color: var(--purple); }
+  .callout-green  { background: var(--green-light);  border-color: var(--green);  }
+  .callout-amber  { background: var(--amber-light);  border-color: var(--amber);  }
+  .callout-red    { background: var(--red-light);    border-color: var(--red);    }
+  .callout-title { font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .callout-blue .callout-title   { color: var(--blue);   }
+  .callout-purple .callout-title { color: var(--purple); }
+  .callout-green .callout-title  { color: var(--green);  }
+  .callout-amber .callout-title  { color: var(--amber);  }
+  .callout-red .callout-title    { color: var(--red);    }
+  .callout p { font-size: 0.86rem; color: var(--text); line-height: 1.65; }
+
+  /* ── COMPARISON TABLE ── */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.84rem; }
+  th { background: #0f172a; color: #f1f5f9; padding: 10px 14px; text-align: left; font-weight: 700; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; }
+  th:first-child { border-radius: 8px 0 0 0; }
+  th:last-child  { border-radius: 0 8px 0 0; }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  tr:last-child td { border-bottom: none; }
+  .yes { color: var(--green); font-weight: 700; }
+  .no  { color: var(--red);   font-weight: 700; }
+  .partial { color: var(--amber); font-weight: 700; }
+
+  /* ── AGENT CARDS ── */
+  .agent-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 16px 0; }
+  .agent-card { border: 1.5px solid var(--border); border-radius: 10px; padding: 16px; background: #fafafa; }
+  .agent-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .agent-icon { font-size: 1.4rem; }
+  .agent-name { font-size: 0.92rem; font-weight: 800; color: var(--text); }
+  .agent-layer { font-size: 0.68rem; font-weight: 600; color: var(--text-light); text-transform: uppercase; letter-spacing: 1px; }
+  .agent-desc { font-size: 0.8rem; color: var(--slate); line-height: 1.55; margin-bottom: 10px; }
+  .badge-row { display: flex; flex-wrap: wrap; gap: 5px; }
+  .badge { font-size: 0.66rem; font-weight: 700; padding: 3px 8px; border-radius: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .b-react  { background: #ede9fe; color: #5b21b6; }
+  .b-tools  { background: #dbeafe; color: #1d4ed8; }
+  .b-memory { background: #d1fae5; color: #065f46; }
+  .b-plans  { background: #fef3c7; color: #92400e; }
+  .b-verify { background: #fee2e2; color: #991b1b; }
+
+  /* ── FLOW DIAGRAM ── */
+  .flow { background: #0f172a; border-radius: 12px; padding: 24px; margin: 16px 0; }
+  .flow-title { font-size: 0.78rem; font-weight: 700; color: #7dd3fc; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 16px; }
+  .flow-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .flow-box { background: #1e293b; border: 1px solid #334155; border-radius: 7px; padding: 7px 13px; font-size: 0.78rem; color: #e2e8f0; font-weight: 600; }
+  .flow-box.highlight { background: #1e3a5f; border-color: #3b82f6; color: #7dd3fc; }
+  .flow-box.success { background: #064e3b; border-color: #059669; color: #6ee7b7; }
+  .flow-box.warning { background: #451a03; border-color: #d97706; color: #fcd34d; }
+  .flow-arrow { color: #475569; font-size: 1rem; font-weight: 900; }
+  .flow-label { font-size: 0.7rem; color: #64748b; font-style: italic; }
+
+  /* ── REACT LOOP ── */
+  .react-steps { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+  .react-step { background: #1e293b; border: 1px solid #334155; border-radius: 7px; padding: 7px 13px; font-size: 0.8rem; color: #e2e8f0; font-weight: 600; }
+  .react-step.special { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
+  .react-arr { color: #7c3aed; font-weight: 900; font-size: 1.1rem; }
+
+  /* ── TOOL CHIPS ── */
+  .tools-wrap { display: flex; flex-wrap: wrap; gap: 7px; margin: 12px 0; }
+  .tool { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; background: #f1f5f9; border: 1.5px solid #e2e8f0; border-radius: 6px; padding: 4px 10px; color: #1d4ed8; }
+  .tool.new { border-color: #059669; color: #059669; background: #ecfdf5; }
+
+  /* ── MEMORY CARDS ── */
+  .mem-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin: 16px 0; }
+  .mem-card { border-radius: 10px; padding: 14px; border: 1.5px solid; }
+  .mem-st { border-color: var(--blue-mid);   background: var(--blue-light);   }
+  .mem-lt { border-color: var(--purple-mid); background: var(--purple-light); }
+  .mem-en { border-color: var(--green-mid);  background: var(--green-light);  }
+  .mem-title { font-size: 0.76rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .mem-st .mem-title { color: var(--blue);   }
+  .mem-lt .mem-title { color: var(--purple); }
+  .mem-en .mem-title { color: var(--green);  }
+  .mem-body { font-size: 0.78rem; color: var(--slate); line-height: 1.6; }
+  .mem-tech { font-size: 0.72rem; color: var(--text-light); margin-top: 6px; font-style: italic; }
+
+  /* ── FORMULA ── */
+  .formula { background: #fafafa; border: 2px solid var(--border); border-radius: 10px; padding: 14px 18px; margin: 12px 0; text-align: center; }
+  .formula-text { font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; color: var(--text); }
+  .f1{color:#d97706;font-weight:800;} .f2{color:#059669;font-weight:800;} .f3{color:#2563eb;font-weight:800;} .f4{color:#7c3aed;font-weight:800;}
+
+  /* ── LAYER BLOCK ── */
+  .layer-block { border: 2px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 14px; }
+  .layer-block-title { font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .layer-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  /* ── TOC ── */
+  .toc { background: var(--slate-light); border: 1.5px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 36px; }
+  .toc-title { font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; color: var(--slate); margin-bottom: 12px; }
+  .toc-list { list-style: none; }
+  .toc-list li { padding: 4px 0; font-size: 0.85rem; color: var(--blue); border-bottom: 1px solid var(--border); display: flex; gap: 10px; }
+  .toc-list li:last-child { border-bottom: none; }
+  .toc-num { color: var(--text-light); font-weight: 700; min-width: 24px; }
+
+  /* ── VERDICT CHIPS ── */
+  .verdict { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.74rem; font-weight: 700; margin: 0 2px; }
+  .v-yes  { background: #d1fae5; color: #065f46; }
+  .v-warn { background: #fef3c7; color: #92400e; }
+  .v-no   { background: #fee2e2; color: #991b1b; }
+  .v-unk  { background: #f1f5f9; color: #64748b; }
+
+  /* ── STACK ── */
+  .stack-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin: 14px 0; }
+  .stack-card { border: 1.5px solid var(--border); border-radius: 8px; padding: 12px; text-align: center; background: #fafafa; }
+  .stack-name { font-size: 0.82rem; font-weight: 800; color: var(--text); margin-bottom: 3px; }
+  .stack-role { font-size: 0.7rem; color: var(--text-light); }
+
+  /* ── PRINT STYLES ── */
+  @media print {
+    .print-bar { display: none !important; }
+    .doc { margin: 0; padding: 20px 32px; max-width: 100%; }
+    .cover { border-radius: 0; }
+    body { font-size: 12px; }
+    .agent-grid { grid-template-columns: 1fr 1fr; }
+    .mem-grid { grid-template-columns: repeat(3,1fr); }
+    .stack-grid { grid-template-columns: repeat(4,1fr); }
+    h2 { page-break-before: always; }
+    h2:first-of-type { page-break-before: avoid; }
+    .flow, .callout, .layer-block, .agent-card { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<!-- PRINT BAR -->
+<div class="print-bar">
+  <span>Frontier AI Radar — Architecture & Justification Report</span>
+  <button class="print-btn" onclick="window.print()">⬇ Download / Print as PDF</button>
+</div>
+
+<div class="doc">
+
+  <!-- ══ COVER ══ -->
+  <div class="cover">
+    <div class="cover-tag">Hackathon Architecture Report · Centific AIDF & Solutions</div>
+    <h1>⚡ Frontier <span>AI Radar</span></h1>
+    <p class="cover-sub">Why We Built a Fully Agentic Multi-Agent Intelligence System<br/>Instead of a Simple Pipeline — And How Every Component Works</p>
+    <div class="cover-meta">
+      <span class="cover-badge">12 Autonomous Agents</span>
+      <span class="cover-badge">6 Architectural Layers</span>
+      <span class="cover-badge">LangGraph + Claude</span>
+      <span class="cover-badge">ReAct Loops</span>
+      <span class="cover-badge">3-Layer Memory</span>
+      <span class="cover-badge">21 Tools</span>
+      <span class="cover-badge">Cross-Agent Verification</span>
+    </div>
+  </div>
+
+  <!-- ══ TOC ══ -->
+  <div class="toc">
+    <div class="toc-title">Table of Contents</div>
+    <ul class="toc-list">
+      <li><span class="toc-num">1</span> The Problem — What We Were Asked to Build</li>
+      <li><span class="toc-num">2</span> The Decision — Why Fully Agentic, Not a Pipeline</li>
+      <li><span class="toc-num">3</span> The 5 Agentic Properties — How Each One Is Satisfied</li>
+      <li><span class="toc-num">4</span> The ReAct Mechanism — Reasoning Before Every Action</li>
+      <li><span class="toc-num">5</span> The 6-Layer Architecture — All 12 Agents Explained</li>
+      <li><span class="toc-num">6</span> Cross-Agent Communication — The Genuine Agentic Moment</li>
+      <li><span class="toc-num">7</span> The 3-Layer Memory System</li>
+      <li><span class="toc-num">8</span> The Complete Tool System (21 Tools)</li>
+      <li><span class="toc-num">9</span> Source-to-Agent Mapping</li>
+      <li><span class="toc-num">10</span> Impact Scoring Formula</li>
+      <li><span class="toc-num">11</span> Technology Stack</li>
+      <li><span class="toc-num">12</span> Why This Wins the Hackathon</li>
+    </ul>
+  </div>
+
+  <!-- ══ SECTION 1 ══ -->
+  <div class="section-num">Section 1</div>
+  <h2>The Problem — What We Were Asked to Build</h2>
+  <p class="section-intro">The Frontier AI Radar hackathon challenge requires building a system that autonomously monitors the global AI ecosystem and delivers a daily intelligence digest. The scope covers four distinct intelligence domains, each requiring different crawling strategies, reasoning capabilities, and data sources.</p>
+
+  <div class="callout callout-blue">
+    <div class="callout-title">Core Mission</div>
+    <p>Track competitor releases, foundation model provider updates, latest research publications, and HuggingFace benchmarking results — then produce an executive + technical PDF digest delivered by email, with a web UI for management.</p>
+  </div>
+
+  <table>
+    <thead><tr><th>Intelligence Domain</th><th>Sources Required</th><th>Challenge</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Competitor Releases</strong></td><td>Product blogs, changelogs, docs, RSS feeds</td><td>JS-rendered pages, no fixed structure, pagination</td></tr>
+      <tr><td><strong>Model Provider Updates</strong></td><td>OpenAI, Anthropic, Google, Meta, Mistral docs</td><td>SOTA claims need independent verification</td></tr>
+      <tr><td><strong>Research Publications</strong></td><td>arXiv, Semantic Scholar, OpenReview, lab blogs</td><td>40+ papers/day — relevance scoring required</td></tr>
+      <tr><td><strong>HF Benchmarks</strong></td><td>HF Leaderboards, trending models, datasets</td><td>Dynamic ranking data, cross-verify claims</td></tr>
+    </tbody>
+  </table>
+
+  <hr class="divider"/>
+
+  <!-- ══ SECTION 2 ══ -->
+  <div class="section-num">Section 2</div>
+  <h2>The Decision — Why Fully Agentic, Not a Pipeline</h2>
+  <p class="section-intro">The first architectural decision was the most important: should we build a deterministic pipeline (hardcoded function calls) or a genuinely agentic system? Here is our honest, detailed justification.</p>
+
+  <h3>What a Simple Pipeline Looks Like</h3>
+  <div class="flow">
+    <div class="flow-title">Simple Pipeline Approach (What We Rejected)</div>
+    <div class="flow-row">
+      <div class="flow-box">fetch_url(config.urls)</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">extract_text(html)</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">summarize(text)</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">save_to_db()</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">render_pdf()</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">send_email()</div>
+    </div>
+    <div class="flow-label" style="color:#ef4444;margin-top:6px;">❌ Every step is hardcoded. No reasoning. No decisions. No adaptation. Claude is just a summarizer.</div>
+  </div>
+
+  <h3>Why a Pipeline Fails This Problem</h3>
+  <table>
+    <thead><tr><th>Real-World Scenario</th><th>Pipeline Behavior</th><th>Agentic Behavior</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Anthropic blog is JS-rendered, HTTP returns empty</td>
+        <td class="no">Returns empty. Fails silently.</td>
+        <td class="yes">Agent detects thin content → switches to Playwright headless tool</td>
+      </tr>
+      <tr>
+        <td>OpenAI claims GPT-5 is #1 on MMLU</td>
+        <td class="no">Accepts claim. Reports it as fact.</td>
+        <td class="yes">Model Intelligence flags claim → Verification Agent checks HF leaderboard → verdict issued</td>
+      </tr>
+      <tr>
+        <td>arXiv returns 40 papers, only 3 are relevant</td>
+        <td class="no">Reports all 40 or blindly picks top 10 by date</td>
+        <td class="yes">Research Agent scores each by relevance rubric, refines query if results are thin</td>
+      </tr>
+      <tr>
+        <td>A competitor blog links to a separate changelog</td>
+        <td class="no">Stops at the blog page. Misses the real release.</td>
+        <td class="yes">Agent decides to follow the link → fetches deeper → finds the actual release</td>
+      </tr>
+      <tr>
+        <td>One agent fails (e.g. HF is down)</td>
+        <td class="no">Entire pipeline crashes or produces incomplete digest</td>
+        <td class="yes">Mission Controller detects failure → marks agent as partial → digest continues with note</td>
+      </tr>
+      <tr>
+        <td>Research paper is highly relevant and cites key work</td>
+        <td class="no">Only reports the paper itself</td>
+        <td class="yes">Research Agent follows citation trail → discovers related foundational paper</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout callout-green">
+    <div class="callout-title">The Core Justification</div>
+    <p>The problem requires adaptive intelligence — not mechanical execution. The web is unstructured, sources change format, claims need verification, and relevance requires reasoning. A pipeline processes what it expects. An agent handles what it finds.</p>
+  </div>
+
+  <h3>Direct Comparison</h3>
+  <table>
+    <thead><tr><th>Capability</th><th>Simple Python Pipeline</th><th>LangGraph Agentic System</th></tr></thead>
+    <tbody>
+      <tr><td>Decides which tool to use</td><td class="no">No — hardcoded</td><td class="yes">Yes — LLM reasoning</td></tr>
+      <tr><td>Retries on low-quality results</td><td class="no">No</td><td class="yes">Yes — ReAct loop</td></tr>
+      <tr><td>Follows links autonomously</td><td class="no">No</td><td class="yes">Yes</td></tr>
+      <tr><td>Verifies claims across agents</td><td class="no">No</td><td class="yes">Yes — shared state</td></tr>
+      <tr><td>Adapts to JS-rendered pages</td><td class="no">No</td><td class="yes">Yes — tool fallback</td></tr>
+      <tr><td>Scores relevance dynamically</td><td class="no">No</td><td class="yes">Yes — rubric in prompt</td></tr>
+      <tr><td>Memory across runs</td><td class="no">No</td><td class="yes">Yes — 3-layer memory</td></tr>
+      <tr><td>Re-plans if findings are thin</td><td class="no">No</td><td class="yes">Yes — Mission Controller</td></tr>
+      <tr><td>Detects narrative theme</td><td class="no">No</td><td class="yes">Yes — Digest Agent</td></tr>
+      <tr><td>Partial failure tolerance</td><td class="partial">Manual try/except</td><td class="yes">Built-in via state + routing</td></tr>
+    </tbody>
+  </table>
+
+  <hr class="divider"/>
+
+  <!-- ══ SECTION 3 ══ -->
+  <div class="section-num">Section 3</div>
+  <h2>The 5 Agentic Properties — How Each Is Satisfied</h2>
+  <p class="section-intro">For a system to be genuinely agentic — not just labeled agentic — it must satisfy five core properties. Here is exactly how each property is implemented in our system.</p>
+
+  <div class="callout callout-blue">
+    <div class="callout-title">① Goal-Driven Behavior</div>
+    <p><strong>Definition:</strong> Each agent has an explicit goal it works toward — not just a function to execute.<br/>
+    <strong>Implementation:</strong> Every agent's system prompt opens with a clear goal statement. The Mission Controller holds the overall mission goal in <code>RadarState.mission_goal</code>. The Strategy Planner converts this into daily sub-goals stored in <code>RadarState.strategy_plan</code>. Every intelligence agent reads its sub-goal before starting its ReAct loop.</p>
+  </div>
+
+  <div class="callout callout-purple">
+    <div class="callout-title">② Autonomous Decision Making</div>
+    <p><strong>Definition:</strong> The agent decides its next action based on what it observes — not a hardcoded sequence.<br/>
+    <strong>Implementation:</strong> Every agent uses LLM reasoning (Claude) to select its next tool call. When the Competitor Intelligence Agent finds a thin blog page, Claude decides to call <code>fetch_headless(url)</code>. When Research Agent gets low-relevance results, Claude decides to call <code>search_semantic_scholar()</code> with a refined query. No if/else in agent code — all decisions are LLM-driven.</p>
+  </div>
+
+  <div class="callout callout-green">
+    <div class="callout-title">③ Tool Usage</div>
+    <p><strong>Definition:</strong> Agents act on the world through a defined set of tools they can invoke.<br/>
+    <strong>Implementation:</strong> 21 tools defined in <code>core/tools.py</code>. Each tool is a callable with a clear docstring that Claude reads to understand what it does. Tools are passed to Claude via the Anthropic API's tool-use interface. Claude returns a structured tool call — the framework executes it — the result returns to Claude for the next reasoning step.</p>
+  </div>
+
+  <div class="callout callout-amber">
+    <div class="callout-title">④ Memory / Context Awareness</div>
+    <p><strong>Definition:</strong> Agents retain and use context — within a run, across runs, and about known entities.<br/>
+    <strong>Implementation:</strong> 3-layer memory system. Short-term: LangGraph TypedDict state shared across all agents in a single run. Long-term: PostgreSQL stores historical findings — Strategy Planner reads this to adjust today's priorities. Entity memory: ChromaDB vector embeddings of known organizations, models, and benchmarks — every agent reads entity context before summarizing a finding.</p>
+  </div>
+
+  <div class="callout callout-red">
+    <div class="callout-title">⑤ Reasoning Before Acting</div>
+    <p><strong>Definition:</strong> The agent thinks through its situation before taking any action — not just pattern-matching to a response.<br/>
+    <strong>Implementation:</strong> The ReAct loop enforces this structurally. Claude is prompted: "Reason step by step: What did you find? Is it good enough? What should you do next?" before any tool is called. This is not cosmetic — Claude's reasoning directly determines whether it loops, emits a finding, or escalates to the Mission Controller.</p>
+  </div>
+
+  <hr class="divider"/>
+
+  <!-- ══ SECTION 4 ══ -->
+  <div class="section-num">Section 4</div>
+  <h2>The ReAct Mechanism — Reasoning Before Every Action</h2>
+  <p class="section-intro">ReAct (Reason + Act) is the cognitive loop that every agent in our system follows. It is what separates genuine agents from labeled functions. Here is how it works in detail.</p>
+
+  <div class="flow">
+    <div class="flow-title">Universal Agent Cognitive Loop — All 12 Agents</div>
+    <div class="react-steps">
+      <div class="react-step">① Observe</div><div class="react-arr">→</div>
+      <div class="react-step">② Read Memory</div><div class="react-arr">→</div>
+      <div class="react-step">③ Reason</div><div class="react-arr">→</div>
+      <div class="react-step">④ Select Tool</div><div class="react-arr">→</div>
+      <div class="react-step">⑤ Act</div><div class="react-arr">→</div>
+      <div class="react-step">⑥ Evaluate Quality</div><div class="react-arr">→</div>
+      <div class="react-step">⑦ Write Memory</div><div class="react-arr">→</div>
+      <div class="react-step special">⑧ Decide: Loop / Emit / Escalate</div>
+    </div>
+  </div>
+
+  <h3>Step-by-Step Explanation</h3>
+  <table>
+    <thead><tr><th>Step</th><th>What Happens</th><th>Example (Competitor Agent)</th></tr></thead>
+    <tbody>
+      <tr><td><strong>① Observe</strong></td><td>Agent receives its inputs: config, since_timestamp, any prior observations from this run</td><td>Receives: competitor=Anthropic, urls=[blog, changelog], since=yesterday</td></tr>
+      <tr><td><strong>② Read Memory</strong></td><td>Reads entity memory for context about this competitor and last seen state</td><td>Reads: "Last Anthropic update was Claude 3.5 Sonnet on [date]"</td></tr>
+      <tr><td><strong>③ Reason</strong></td><td>Claude thinks: what do I know? What do I need? What's the best first action?</td><td>"Blog is JS-rendered per entity memory. Should start with headless fetch."</td></tr>
+      <tr><td><strong>④ Select Tool</strong></td><td>Claude picks the most appropriate tool from its available set</td><td>Calls: fetch_headless('anthropic.com/news')</td></tr>
+      <tr><td><strong>⑤ Act</strong></td><td>Tool executes. Returns content to Claude.</td><td>Returns: page HTML with 3 blog post titles and snippets</td></tr>
+      <tr><td><strong>⑥ Evaluate Quality</strong></td><td>Claude assesses: is this sufficient? Confident? Or needs more investigation?</td><td>"Found 1 new post. Title mentions 'Claude 4'. Need changelog to confirm release details."</td></tr>
+      <tr><td><strong>⑦ Write Memory</strong></td><td>Updates short-term state with what was found. Updates entity memory if new info discovered.</td><td>Writes: page snapshot hash, current iteration count</td></tr>
+      <tr><td><strong>⑧ Decide</strong></td><td>Loop (fetch more), Emit (confident finding ready), or Escalate (cannot resolve — flag to Mission Controller)</td><td>Loops: calls fetch_webpage('docs.anthropic.com/changelog') for spec details</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout callout-amber">
+    <div class="callout-title">Why Max 3 Iterations?</div>
+    <p>Each agent is capped at 3 ReAct iterations per source. This prevents infinite loops while still allowing meaningful adaptive behavior. If an agent cannot reach confidence ≥ 0.6 in 3 iterations, it emits a low-confidence finding with an "unverified" flag rather than blocking the pipeline.</p>
+  </div>
+
+  <hr class="divider"/>
+
+  <!-- ══ SECTION 5 ══ -->
+  <div class="section-num">Section 5</div>
+  <h2>The 6-Layer Architecture — All 12 Agents Explained</h2>
+  <p class="section-intro">The system is organized into six functional layers, each with a distinct responsibility. Agents within the same layer run in parallel where possible. Layers execute in sequence with shared state passing between them.</p>
+
+  <!-- Layer 1 -->
+  <div class="layer-block">
+    <div class="layer-block-title"><div class="layer-dot" style="background:#f59e0b"></div> Layer 1 — Mission Control (1 Agent)</div>
+    <div class="agent-grid" style="grid-template-columns:1fr;">
+      <div class="agent-card">
+        <div class="agent-card-header"><div class="agent-icon">🎯</div><div><div class="agent-name">Mission Controller</div><div class="agent-layer">Sole authority on mission success</div></div></div>
+        <div class="agent-desc">Oversees the entire daily run from start to finish. Monitors the progress of all 11 other agents by reading shared state. When it detects that findings in any domain are below threshold, it autonomously triggers additional investigation rounds. Has the authority to re-dispatch agents, extend iteration limits, or mark the run as partial-complete if a domain is entirely unavailable.</div>
+        <div class="badge-row"><span class="badge b-react">ReAct Loop</span><span class="badge b-tools">Tool Calling</span><span class="badge b-memory">Memory R/W</span><span class="badge b-plans">Re-Plans Runtime</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Layer 2 -->
+  <div class="layer-block">
+    <div class="layer-block-title"><div class="layer-dot" style="background:#a78bfa"></div> Layer 2 — Planning (1 Agent)</div>
+    <div class="agent-grid" style="grid-template-columns:1fr;">
+      <div class="agent-card">
+        <div class="agent-card-header"><div class="agent-icon">🗺️</div><div><div class="agent-name">Strategy Planner</div><div class="agent-layer">Sets today's intelligence priorities</div></div></div>
+        <div class="agent-desc">Reads yesterday's findings from long-term memory before each run. Reasons about what was significant, what topics are trending, and what domains need extra depth today. Writes a structured strategy plan into shared state that all Layer 4 agents read before starting. For example: if three competitors released models yesterday, it increases crawl depth for model provider sources today.</div>
+        <div class="badge-row"><span class="badge b-react">ReAct Loop</span><span class="badge b-tools">Tool Calling</span><span class="badge b-memory">Memory R/W</span><span class="badge b-plans">Daily Re-Planning</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Layer 3 -->
+  <div class="layer-block">
+    <div class="layer-block-title"><div class="layer-dot" style="background:#34d399"></div> Layer 3 — Discovery (3 Agents · Parallel)</div>
+    <div class="agent-grid">
+      <div class="agent-card">
+        <div class="agent-card-header"><div class="agent-icon">🔍</div><div><div class="agent-name">Source Scout</div><div class="agent-layer">Dynamic source discovery</div></div></div>
+        <div class="agent-desc">Autonomously discovers brand new AI information sources not yet in the config. Uses web search and GitHub trending to find new company blogs, research lab pages, and documentation sites. Writes newly discovered URLs directly into the monitored source list for this and future runs.</div>
+        <div class="badge-row"><span class="badge b-react">ReAct Loop</span><span class="badge b-tools">Tool Calling</span><span class="badge b-memory">Memory R/W</span></div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-card-header"><div class="agent-icon">📡</div><div><div class="agent-name">Feed Monitor</div><div class="agent-layer">RSS and changelog tracker</div></div></div>
+        <div class="agent-desc">Monitors all RSS/Atom feeds and changelog pages across every configured source. Computes content fingerprint hashes and detects changes since the last run. Routes newly detected updates to the appropriate Layer 4 intelligence agent based on source classification.</div>
+        <div class="badge-row"><span class="badge b-react">ReAct Loop</span><span class="badge b-tools">Tool Calling</span><span class="badge b-memory">Memory R/W</span></div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-card-header"><div class="agent-icon">📈</div><div><div class="agent-name">Trend Scout</div><div class="agent-layer">Early signal detection</div></div></div>
+        <div class="agent-desc">Monitors HackerNews, Reddit r/MachineLearning and r/LocalLLaMA, and GitHub Trending. Specializes in detecting early community signals — discussions and GitHub projects that often precede official announcements by 24–72 hours. Feeds trend signals into shared state for intelligence agents to corroborate.</div>
+        <div class="badge-row"><span class="badge b-react">ReAct Loop</span><span class="badge b-tools">Tool Calling</span><span class="badge b-memory">Memory R/W</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Layer 4 -->
+  <div class="layer-block">
+    <div class="layer-block-title"><div class="layer-dot" style="background:#38bdf8"></div> Layer 4 — Intelligence Analysis (4 Agents · Parallel)</div>
+    <div class="agent-grid">
+      <div class="agent-card">
+        <div class="agent-card-header"><div class="agent-icon">🏢</div><div><div class="agent-name">Competitor Intelligence</div><div class="agent-layer">Tracks what competitors shipped</div></div></div>
+        <div class="agent-desc">Crawls product blogs, changelogs, and documentation release notes for configured competitors (OpenAI, Anthropic, Google, Meta, Mistral, Cohere and others). Autonomously follows links to find the actual release content behind summary pages. Classifies each finding by type: GA / Beta / Preview / Pricing / API Change / Safety Update.</div>
+        <div class="badge-row"><span class="badge b-react">ReAct Loop</span><span class="badge b-tools">Tool Calling</span><span class="badge b-memory">Memory R/W</span></div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-card-header"><div class="agent-icon">🤖</div><div><div class="agent-name">Model Intelligence</div><div class="agent-layer">Tracks model + API updates</div></div></div>
+        <div class="agent-desc">Monitors foundation model provider announcements for structured intelligence: model name, version, context window, modalities, pricing, tool-use capabilities, and safety policy changes. Critically — flags every benchmark or SOTA claim into <code>verification_tasks[]</code> for the Verification Agent to check independently.</div>
+        <div class="badge-row"><span class="badge b-react">ReAct Loop</span><span class="badge b-tools">Tool Calling</span><span class="badge b-memory">Memory R/W</span><span class="badge b-verify">Flags SOTA Claims</span></div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-card-header"><div class="agent-icon">📄</div><div><div class="agent-name">Research Intelligence</div><div class="agent-layer">arXiv, Semantic Scholar, OpenReview</div></div></div>
+        <div class="agent-desc">Searches arXiv (cs.CL, cs.LG, stat.ML), Semantic Scholar, and OpenReview for new publications. Scores every paper against an org-relevance rubric (+0.3 for new benchmarks, +0.3 for data-centric methods, +0.25 for agentic workflows, +0.25 for multimodal, etc.). For papers scoring ≥ 0.8, follows citation trails to discover foundational related work.</div>
+        <div class="badge-row"><span class="badge b-react">ReAct Loop</span><span class="badge b-tools">Tool Calling</span><span class="badge b-memory">Memory R/W</span></div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-card-header"><div class="agent-icon">📊</div><div><div class="agent-name">Benchmark Intelligence</div><div class="agent-layer">HuggingFace leaderboard tracker</div></div></div>
+        <div class="agent-desc">Monitors HuggingFace leaderboards, trending models, and evaluation datasets daily. Detects meaningful rank changes, new model families entering the top 10, and SOTA shifts. Automatically adds reproducibility caveats where evaluation settings differ between submissions or leaderboard gaming is detected.</div>
+        <div class="badge-row"><span class="badge b-react">ReAct Loop</span><span class="badge b-tools">Tool Calling</span><span class="badge b-memory">Memory R/W</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Layer 5 -->
+  <div class="layer-block">
+    <div class="layer-block-title"><div class="layer-dot" style="background:#fb7185"></div> Layer 5 — Validation &amp; Ranking (2 Agents)</div>
+    <div class="agent-grid">
+      <div class="agent-card">
+        <div class="agent-card-header"><div class="agent-icon">✅</div><div><div class="agent-name">Verification Agent</div><div class="agent-layer">Independent claim validation</div></div></div>
+        <div class="agent-desc">Receives all verification tasks dispatched by Model Intelligence. For each task, independently fetches the relevant HuggingFace leaderboard and finds the actual score for the claimed model and benchmark. Returns one of four evidence-backed verdicts: Verified / Partially Verified / Contradicted / Not Found. These verdicts are included in the final PDF with supporting evidence.</div>
+        <div class="badge-row"><span class="badge b-react">ReAct Loop</span><span class="badge b-tools">Tool Calling</span><span class="badge b-memory">Memory R/W</span><span class="badge b-verify">Issues Verdicts</span></div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-card-header"><div class="agent-icon">🏆</div><div><div class="agent-name">Ranking Agent</div><div class="agent-layer">Dedup, cluster, score all findings</div></div></div>
+        <div class="agent-desc">Applies the Impact Score formula across all findings from all four intelligence agents. Performs two-stage deduplication: first by content hash (exact), then by embedding cosine similarity above 0.92 (semantic). Clusters findings by topic and entity. Produces a ranked, deduplicated, clustered list ready for the Digest Agent.</div>
+        <div class="badge-row"><span class="badge b-react">ReAct Loop</span><span class="badge b-tools">Tool Calling</span><span class="badge b-memory">Memory R/W</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Layer 6 -->
+  <div class="layer-block">
+    <div class="layer-block-title"><div class="layer-dot" style="background:#4ade80"></div> Layer 6 — Synthesis &amp; Delivery (3 Agents)</div>
+    <div class="agent-grid">
+      <div class="agent-card">
+        <div class="agent-card-header"><div class="agent-icon">📝</div><div><div class="agent-name">Digest Agent</div><div class="agent-layer">Narrative synthesis + dual output</div></div></div>
+        <div class="agent-desc">Synthesizes ranked findings into a coherent daily intelligence narrative. Identifies the dominant theme across all findings (e.g., "context window expansion wave", "pricing competition intensifying"). Critically — if Claude evaluates its own output and finds it reads as a plain list rather than a story, it autonomously rewrites it. Produces both JSON (for storage) and Markdown (for PDF rendering).</div>
+        <div class="badge-row"><span class="badge b-react">ReAct Loop</span><span class="badge b-tools">Tool Calling</span><span class="badge b-memory">Memory R/W</span><span class="badge b-plans">Self-Rewrites</span></div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-card-header"><div class="agent-icon">📄</div><div><div class="agent-name">Report Generator</div><div class="agent-layer">Branded PDF renderer</div></div></div>
+        <div class="agent-desc">Renders the final branded PDF digest from the Digest Agent's Markdown output. Structure: Cover Page → Executive Summary (7 items) → Competitor Intelligence → Model Provider Updates → Research Highlights → Benchmark Movements → Verification Verdicts → Appendix with source citations. Uses WeasyPrint HTML→PDF for polished output.</div>
+        <div class="badge-row"><span class="badge b-tools">Tool Calling</span><span class="badge b-memory">Memory R/W</span></div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-card-header"><div class="agent-icon">📬</div><div><div class="agent-name">Notification Agent</div><div class="agent-layer">Email, dashboard, archive</div></div></div>
+        <div class="agent-desc">Distributes the completed digest via three channels: email (inline executive summary + PDF attachment to configured recipients), web dashboard update (latest run status and top findings), and digest archive (stored for search and historical comparison). Implements retry queue with exponential backoff for email delivery failures.</div>
+        <div class="badge-row"><span class="badge b-tools">Tool Calling</span><span class="badge b-memory">Memory R/W</span></div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider"/>
+
+  <!-- ══ SECTION 6 ══ -->
+  <div class="section-num">Section 6</div>
+  <h2>Cross-Agent Communication — The Genuine Agentic Moment</h2>
+  <p class="section-intro">The most architecturally significant feature of this system is genuine runtime communication between agents. This is what makes it truly multi-agent rather than parallel isolated processes.</p>
+
+  <div class="flow">
+    <div class="flow-title">Cross-Agent Verification Flow — Runtime Communication</div>
+    <div class="flow-row">
+      <div class="flow-box highlight">Model Intelligence</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">Detects: "GPT-5 claims #1 on MMLU"</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box highlight">Writes to verification_tasks[]</div>
+    </div>
+    <div class="flow-row" style="padding-left:20px;">
+      <div class="flow-arrow" style="transform:rotate(90deg);">→</div>
+    </div>
+    <div class="flow-row">
+      <div class="flow-box highlight">Verification Agent</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">Reads task from shared state</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">Fetches HF MMLU Leaderboard</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">Finds actual score for GPT-5</div>
+    </div>
+    <div class="flow-row" style="margin-top:10px;">
+      <div class="flow-box success">✅ Verified — HF confirms #1</div>
+      <span style="color:#64748b;margin:0 8px;">or</span>
+      <div class="flow-box warning">⚠️ Partial — ranked #3 not #1</div>
+      <span style="color:#64748b;margin:0 8px;">or</span>
+      <div class="flow-box" style="background:#450a0a;border-color:#dc2626;color:#fca5a5;">❌ Contradicted — different model leads</div>
+    </div>
+    <div class="flow-row" style="margin-top:10px;">
+      <div class="flow-arrow">→</div>
+      <div class="flow-box highlight">Verdict written to verification_verdicts[]</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box success">Digest Agent includes verdict + evidence in PDF</div>
+    </div>
+  </div>
+
+  <div class="callout callout-purple">
+    <div class="callout-title">Why This Matters</div>
+    <p>This cross-agent verification pattern demonstrates that agents are not isolated processes — they actively influence each other's behavior through shared state at runtime. The Verification Agent doesn't run on a schedule — it runs because Model Intelligence decided a claim needed checking. This is genuine inter-agent coordination, not parallel independent execution.</p>
+  </div>
+
+  <hr class="divider"/>
+
+  <!-- ══ SECTION 7 ══ -->
+  <div class="section-num">Section 7</div>
+  <h2>The 3-Layer Memory System</h2>
+  <p class="section-intro">Memory is what separates an agent from a stateless function. Our system implements three distinct memory layers, each serving a different temporal and contextual purpose, wired into every agent's ReAct loop.</p>
+
+  <div class="mem-grid">
+    <div class="mem-card mem-st">
+      <div class="mem-title">⚡ Short-Term Memory</div>
+      <div class="mem-body">Stores all findings, tool results, and observations from the current run only. Agents read this before acting to avoid re-fetching content already retrieved by another agent in the same run. Cleared automatically after each run completes.</div>
+      <div class="mem-tech">Implementation: LangGraph TypedDict State (in-process, zero latency)</div>
+    </div>
+    <div class="mem-card mem-lt">
+      <div class="mem-title">📚 Long-Term Memory</div>
+      <div class="mem-body">Persists historical findings, past digests, content hashes, and trend baselines across runs. Strategy Planner reads this every morning to calibrate today's priorities. Digest Agent reads this to generate "What changed since yesterday." Enables incremental diff — only re-summarize pages that actually changed.</div>
+      <div class="mem-tech">Implementation: PostgreSQL with pgvector index for similarity queries</div>
+    </div>
+    <div class="mem-card mem-en">
+      <div class="mem-title">🏷️ Entity Memory</div>
+      <div class="mem-body">Tracks known organizations, AI models, benchmarks, and papers as vector embeddings. Every agent reads relevant entity context before summarizing a finding — enabling accurate statements like "This is Anthropic's 4th major model release this year." Semantic search enables fuzzy entity matching.</div>
+      <div class="mem-tech">Implementation: ChromaDB (vector embeddings) + Postgres (structured metadata)</div>
+    </div>
+  </div>
+
+  <hr class="divider"/>
+
+  <!-- ══ SECTION 8 ══ -->
+  <div class="section-num">Section 8</div>
+  <h2>The Complete Tool System (21 Tools)</h2>
+  <p class="section-intro">All 21 tools are defined once in <code>core/tools.py</code>. Agents never make HTTP calls directly — they call tools. This centralizes rate limiting, robots.txt compliance, retry logic, caching, and error handling in one place. Claude selects tools via LLM reasoning, not hardcoded logic.</p>
+
+  <h4>Web Fetching</h4>
+  <div class="tools-wrap">
+    <span class="tool">fetch_webpage(url)</span>
+    <span class="tool">fetch_rss_feed(url)</span>
+    <span class="tool">fetch_headless(url)</span>
+    <span class="tool">extract_text(html)</span>
+    <span class="tool new">extract_pdf_text(url) ← FR2 requirement</span>
+    <span class="tool">diff_content(old, new)</span>
+  </div>
+
+  <h4>Search & Discovery</h4>
+  <div class="tools-wrap">
+    <span class="tool">search_web(query)</span>
+    <span class="tool">search_arxiv(query, categories)</span>
+    <span class="tool">search_semantic_scholar(query)</span>
+    <span class="tool">search_github_trending()</span>
+    <span class="tool">search_hackernews(query)</span>
+    <span class="tool">search_reddit(subreddit, query)</span>
+  </div>
+
+  <h4>HuggingFace</h4>
+  <div class="tools-wrap">
+    <span class="tool">fetch_hf_leaderboard(name)</span>
+    <span class="tool">search_hf_models(query)</span>
+    <span class="tool">fetch_hf_model_card(id)</span>
+    <span class="tool">compare_leaderboard_snapshots(task, d1, d2)</span>
+  </div>
+
+  <h4>Memory, Scoring & Delivery</h4>
+  <div class="tools-wrap">
+    <span class="tool">read_memory(type, key)</span>
+    <span class="tool">write_memory(type, key, value)</span>
+    <span class="tool">flag_verification_task(claim)</span>
+    <span class="tool">compute_impact_score(finding)</span>
+    <span class="tool">render_pdf(html)</span>
+    <span class="tool">send_email(to, subject, body, pdf)</span>
+  </div>
+
+  <hr class="divider"/>
+
+  <!-- ══ SECTION 9 ══ -->
+  <div class="section-num">Section 9</div>
+  <h2>Source-to-Agent Mapping</h2>
+  <p class="section-intro">Every website and data source specified in the problem statement is assigned to exactly one agent. Sources are configured in <code>config/sources.yaml</code> — no code changes needed to add new sources.</p>
+
+  <table>
+    <thead><tr><th>Source</th><th>URL / Endpoint</th><th>Owning Agent</th><th>Method</th></tr></thead>
+    <tbody>
+      <tr><td>OpenAI Blog + Changelog</td><td>openai.com/blog · platform.openai.com/docs/changelog</td><td>Competitor Intelligence</td><td>RSS + HTTP</td></tr>
+      <tr><td>Anthropic News + Docs</td><td>anthropic.com/news · docs.anthropic.com/changelog</td><td>Competitor Intelligence</td><td>Headless + HTTP</td></tr>
+      <tr><td>Google DeepMind Blog</td><td>deepmind.google/discover/blog</td><td>Competitor Intelligence</td><td>HTTP</td></tr>
+      <tr><td>Meta AI Blog + GitHub</td><td>ai.meta.com/blog · github.com/meta-llama</td><td>Competitor Intelligence</td><td>HTTP + GitHub API</td></tr>
+      <tr><td>Mistral AI News</td><td>mistral.ai/news · docs.mistral.ai/changelog</td><td>Competitor Intelligence</td><td>RSS + HTTP</td></tr>
+      <tr><td>OpenAI Model / Pricing Docs</td><td>platform.openai.com/docs/models · openai.com/api/pricing</td><td>Model Intelligence</td><td>HTTP</td></tr>
+      <tr><td>Anthropic Model Docs</td><td>docs.anthropic.com/en/docs/about-claude/models</td><td>Model Intelligence</td><td>HTTP</td></tr>
+      <tr><td>Google Gemini API Docs</td><td>ai.google.dev/gemini-api/docs/models</td><td>Model Intelligence</td><td>HTTP</td></tr>
+      <tr><td>arXiv</td><td>export.arxiv.org/api/query (cs.CL, cs.LG, stat.ML)</td><td>Research Intelligence</td><td>Official API</td></tr>
+      <tr><td>Semantic Scholar</td><td>api.semanticscholar.org/graph/v1/paper/search</td><td>Research Intelligence</td><td>Official API</td></tr>
+      <tr><td>OpenReview</td><td>api2.openreview.net/notes</td><td>Research Intelligence</td><td>Official API</td></tr>
+      <tr><td>HF Open LLM Leaderboard</td><td>huggingface.co/spaces/HuggingFaceH4/open_llm_leaderboard</td><td>Benchmark Intelligence + Verification</td><td>HF API + HTTP</td></tr>
+      <tr><td>HF Trending Models</td><td>huggingface.co/api/models?sort=trending</td><td>Benchmark Intelligence</td><td>Official API</td></tr>
+      <tr><td>HF Papers</td><td>huggingface.co/papers</td><td>Benchmark Intelligence</td><td>HTTP</td></tr>
+      <tr><td>Hacker News</td><td>hacker-news.firebaseio.com/v0</td><td>Trend Scout</td><td>Official API</td></tr>
+      <tr><td>Reddit (r/MachineLearning etc.)</td><td>reddit.com/r/MachineLearning + r/LocalLLaMA</td><td>Trend Scout</td><td>Reddit JSON API</td></tr>
+      <tr><td>GitHub Trending</td><td>github.com/trending/python?since=daily</td><td>Source Scout + Trend Scout</td><td>HTTP + GitHub API</td></tr>
+    </tbody>
+  </table>
+
+  <hr class="divider"/>
+
+  <!-- ══ SECTION 10 ══ -->
+  <div class="section-num">Section 10</div>
+  <h2>Impact Scoring Formula</h2>
+  <p class="section-intro">Every finding produced by every intelligence agent is scored by the Ranking Agent using this formula. The score determines position in the daily digest. Weights are configurable in <code>config/scoring.yaml</code>.</p>
+
+  <div class="formula">
+    <div class="formula-text">
+      Impact Score &nbsp;=&nbsp; <span class="f1">0.35 × Relevance</span> &nbsp;+&nbsp; <span class="f2">0.25 × Novelty</span> &nbsp;+&nbsp; <span class="f3">0.20 × Credibility</span> &nbsp;+&nbsp; <span class="f4">0.20 × Actionability</span>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>Factor</th><th>Weight</th><th>How It's Scored</th><th>High Score Criteria</th></tr></thead>
+    <tbody>
+      <tr><td><strong style="color:#d97706;">Relevance</strong></td><td>35%</td><td>Claude scores 0–1 based on entity + topic match against org priorities</td><td>Matches tracked entities, covers eval / agents / safety / multimodal</td></tr>
+      <tr><td><strong style="color:#059669;">Novelty</strong></td><td>25%</td><td>Days since similar finding last seen (from long-term memory)</td><td>Not seen in last 7 days. Genuinely new development.</td></tr>
+      <tr><td><strong style="color:#2563eb;">Credibility</strong></td><td>20%</td><td>Source classification: official primary > official secondary > repost</td><td>Official company blog, official docs, peer-reviewed paper</td></tr>
+      <tr><td><strong style="color:#7c3aed;">Actionability</strong></td><td>20%</td><td>Claude scores 0–1 based on presence of concrete changes</td><td>Includes API change, pricing update, eval result, code/tool release</td></tr>
+    </tbody>
+  </table>
+
+  <hr class="divider"/>
+
+  <!-- ══ SECTION 11 ══ -->
+  <div class="section-num">Section 11</div>
+  <h2>Technology Stack</h2>
+  <p class="section-intro">Every technology choice is justified by either speed-of-build, quality-of-demo, or production-credibility — all three criteria matter for a hackathon.</p>
+
+  <div class="stack-grid">
+    <div class="stack-card"><div class="stack-name">LangGraph</div><div class="stack-role">Agent graph orchestration, shared state, conditional routing</div></div>
+    <div class="stack-card"><div class="stack-name">Claude API</div><div class="stack-role">LLM reasoning engine inside every agent's ReAct loop</div></div>
+    <div class="stack-card"><div class="stack-name">LangSmith</div><div class="stack-role">Full observability — agent traces, token usage, latency per node</div></div>
+    <div class="stack-card"><div class="stack-name">FastAPI</div><div class="stack-role">Backend REST API for UI, run management, findings queries</div></div>
+    <div class="stack-card"><div class="stack-name">Streamlit</div><div class="stack-role">Web UI — dashboard, sources, runs, findings, archive</div></div>
+    <div class="stack-card"><div class="stack-name">PostgreSQL</div><div class="stack-role">Long-term storage — findings, digests, snapshots, run history</div></div>
+    <div class="stack-card"><div class="stack-name">ChromaDB</div><div class="stack-role">Entity memory — vector embeddings for semantic dedup + entity context</div></div>
+    <div class="stack-card"><div class="stack-name">WeasyPrint</div><div class="stack-role">HTML→PDF rendering for branded digest output</div></div>
+    <div class="stack-card"><div class="stack-name">HTTPX</div><div class="stack-role">Async HTTP client for all web fetching with rate limiting</div></div>
+    <div class="stack-card"><div class="stack-name">Playwright</div><div class="stack-role">Headless browser fallback for JS-rendered pages</div></div>
+    <div class="stack-card"><div class="stack-name">BeautifulSoup</div><div class="stack-role">HTML parsing and structured text extraction</div></div>
+    <div class="stack-card"><div class="stack-name">feedparser</div><div class="stack-role">RSS/Atom feed parsing across all monitored sources</div></div>
+  </div>
+
+  <hr class="divider"/>
+
+  <!-- ══ SECTION 12 ══ -->
+  <div class="section-num">Section 12</div>
+  <h2>Why This Wins the Hackathon</h2>
+  <p class="section-intro">Every architectural decision maps directly to one of the three judging criteria: Innovation, Clarity of Thought, and Execution Excellence with Results.</p>
+
+  <table>
+    <thead><tr><th>Judging Criterion</th><th>How Our System Scores</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Innovation</strong></td>
+        <td>Cross-agent SOTA verification is genuinely novel. The Mission Controller re-planning at runtime is not a standard pipeline pattern. The Digest Agent self-rewriting its own output is a demonstration of self-reflection — a cutting-edge agentic capability. The 3-layer memory system enables intelligence that improves over time, not just within a single run.</td>
+      </tr>
+      <tr>
+        <td><strong>Clarity of Thought</strong></td>
+        <td>The 6-layer architecture has a clean separation of concerns — each layer has one responsibility, each agent has one goal. The Impact Score formula is visible and explainable — judges can see exactly why Item #1 ranked above Item #2. LangSmith traces show every reasoning step Claude took. The system can be explained at any level of depth: one sentence, one diagram, or 12 sections.</td>
+      </tr>
+      <tr>
+        <td><strong>Execution Excellence</strong></td>
+        <td>The demo script is a 60-second end-to-end flow: Add URL → Run Now → Watch 12 agents execute in the LangSmith trace → See ranked findings → Download branded PDF → Email received. Every component is functional, not mocked. Partial failure tolerance means the demo does not crash if one source is unavailable. The web UI makes the system accessible to non-technical judges.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout callout-blue">
+    <div class="callout-title">The One-Sentence Pitch to Judges</div>
+    <p style="font-size:0.95rem;font-style:italic;font-weight:600;">"We didn't build a crawler that summarizes AI news. We built an AI research intelligence organization — 12 autonomous agents that reason, use tools, verify each other's claims, remember what they learned yesterday, and produce a boardroom-ready intelligence digest every morning without a single human in the loop."</p>
+  </div>
+
+  <div style="text-align:center;margin-top:36px;padding:20px;background:#f8fafc;border-radius:12px;border:1.5px solid #e2e8f0;">
+    <div style="font-size:0.72rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#94a3b8;margin-bottom:4px;">Frontier AI Radar · Hackathon Architecture Report</div>
+    <div style="font-size:0.8rem;color:#64748b;">Centific AIDF &amp; Solutions · March 2026 · Confidential</div>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,63 @@
+# Source configuration for all agents
+
+research_intel:
+  sources:
+    - type: arxiv
+      categories: ["cs.CL", "cs.LG", "stat.ML"]
+      query: "evaluation OR benchmark OR data curation OR agentic OR multimodal OR safety"
+    - type: semantic_scholar
+      query: "AI evaluation methodology OR data curation OR agentic systems"
+
+competitor_intel:
+  sources:
+    - type: rss
+      url: "https://openai.com/blog/rss.xml"
+    - type: rss
+      url: "https://www.anthropic.com/index.xml"
+    - type: webpage
+      url: "https://ai.google.dev/updates"
+      selector: ".update-item"
+
+model_intel:
+  # Real sources are managed by core/foundation_model_config.py SOURCE_URLS.
+  # The fetch_foundation_model_releases_tool handles all fetching internally.
+  # Covers: HuggingFace API (8 orgs: meta-llama, mistralai, Qwen, google,
+  #         deepseek-ai, microsoft, openai, anthropic),
+  #         OpenAI blog RSS, Anthropic sitemap, DeepMind RSS,
+  #         GitHub releases (openai-python SDK).
+  tool: fetch_foundation_model_releases
+  sources:
+    - type: huggingface_api
+      orgs: ["meta-llama", "mistralai", "Qwen", "google", "deepseek-ai", "microsoft", "openai", "anthropic"]
+    - type: rss
+      url: "https://openai.com/blog/rss.xml"
+    - type: sitemap
+      url: "https://www.anthropic.com/sitemap.xml"
+    - type: rss
+      url: "https://deepmind.google/blog/rss.xml"
+    - type: github_releases
+      url: "https://api.github.com/repos/openai/openai-python/releases"
+
+benchmark_intel:
+  sources:
+    - type: huggingface
+      leaderboard: "open_llm_leaderboard"
+    - type: huggingface
+      leaderboard: "text-generation-inference"
+
+source_scout:
+  discovery_keywords:
+    - "AI research blog"
+    - "machine learning updates"
+    - "LLM releases"
+  search_engines:
+    - tavily
+
+trend_scout:
+  sources:
+    - type: hackernews
+      query: "AI OR LLM OR machine learning"
+    - type: reddit
+      subreddits: ["MachineLearning", "artificial", "LocalLLaMA"]
+    - type: github
+      trending: true

@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ brand_name }} — Daily Intelligence Digest</title>
+<style>
+@page {
+    size: A4;
+    margin: 22pt 24pt 24pt 24pt;
+}
+
+/* ── Reset & Base ──────────────────────────────────────── */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+    color: #1e293b;
+    line-height: 1.6;
+    font-size: 11pt;
+    background: #fff;
+}
+
+/* ── First-page Header (compact, professional) ─────────── */
+.report-header {
+    border: 1px solid #dbeafe;
+    border-left: 5px solid {{ brand_color }};
+    border-radius: 8px;
+    background: #f8fbff;
+    padding: 12px 14px;
+    margin: 0 0 10px 0;
+    page-break-inside: avoid;
+}
+.report-header h1 {
+    font-size: 18pt;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 2px;
+}
+.report-header .subtitle {
+    font-size: 10.5pt;
+    color: #334155;
+    margin-bottom: 8px;
+}
+.meta-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0;
+    font-size: 8.8pt;
+}
+.meta-table td {
+    border: none;
+    padding: 2px 6px 2px 0;
+    color: #475569;
+}
+.meta-table .label {
+    color: #64748b;
+    font-weight: 600;
+    width: 72px;
+}
+
+/* ── Content Container ─────────────────────────────────── */
+.content {
+    padding: 0;
+}
+
+.report-kicker {
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #64748b;
+    margin-bottom: 3px;
+}
+
+.report-title {
+    font-size: 17pt;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0 0 6px 0;
+}
+
+.report-subtitle {
+    font-size: 10pt;
+    color: #475569;
+    margin: 0 0 10px 0;
+}
+
+/* ── Executive Summary Callout ─────────────────────────── */
+.exec-summary {
+    background: #eff6ff;
+    border-left: 4px solid {{ brand_color }};
+    padding: 16px 18px;
+    margin: 0 0 28px 0;
+    border-radius: 0 6px 6px 0;
+    page-break-inside: avoid;
+}
+.exec-summary h2 {
+    color: {{ brand_color }};
+    font-size: 13pt;
+    margin: 0 0 6px;
+    border-bottom: none;
+    padding-bottom: 0;
+}
+.exec-summary p, .exec-summary li {
+    font-size: 10pt;
+    color: #334155;
+}
+
+/* ── Section Headers ───────────────────────────────────── */
+h2 {
+    color: {{ brand_color }};
+    font-size: 14pt;
+    font-weight: 700;
+    margin: 28px 0 18px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid {{ brand_color }};
+    page-break-after: avoid;
+}
+h3 {
+    color: #1e40af;
+    font-size: 11pt;
+    font-weight: 600;
+    margin: 20px 0 12px;
+}
+h4 {
+    color: #475569;
+    font-size: 11pt;
+    font-weight: 600;
+    margin: 20px 0 12px;
+}
+
+/* ── Domain Badge ──────────────────────────────────────── */
+.domain-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 8pt;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+.badge-research     { background: #dbeafe; color: #1e40af; }
+.badge-competitor   { background: #fce7f3; color: #9d174d; }
+.badge-model        { background: #d1fae5; color: #065f46; }
+.badge-benchmark    { background: #fef3c7; color: #92400e; }
+
+/* ── Confidence Badge ─────────────────────────────────── */
+.confidence-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.confidence-high   { background: #dcfce7; color: #166534; }
+.confidence-medium { background: #fef9c3; color: #854d0e; }
+.confidence-low    { background: #fee2e2; color: #991b1b; }
+
+/* ── Entity Tag ───────────────────────────────────────── */
+.entity-tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 8px;
+    font-size: 7.5pt;
+    background: #f1f5f9;
+    color: #475569;
+    margin-right: 4px;
+    margin-bottom: 3px;
+}
+
+/* ── Finding Card ──────────────────────────────────────── */
+.finding-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin: 20px 0;
+    background: #fafbfc;
+    page-break-inside: avoid;
+}
+.finding-card .title {
+    font-size: 12pt;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 10px 0 8px;
+    padding: 6px 10px;
+    background: #f0f7ff;
+    border-left: 3px solid {{ brand_color }};
+    border-radius: 0 4px 4px 0;
+}
+.finding-card .what-changed {
+    font-size: 10pt;
+    color: #334155;
+    margin-bottom: 8px;
+}
+.finding-card .why-matters {
+    font-size: 10pt;
+    color: #475569;
+    font-style: italic;
+    margin-bottom: 12px;
+}
+.finding-card .score-bar {
+    height: 6px;
+    background: #e2e8f0;
+    border-radius: 3px;
+    margin: 8px 0;
+    overflow: hidden;
+}
+.finding-card .score-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: {{ brand_color }};
+}
+.finding-card .meta-row {
+    font-size: 9pt;
+    color: #64748b;
+    margin-top: 10px;
+}
+.finding-card .source-link {
+    font-size: 8.5pt;
+    color: {{ brand_color }};
+    word-break: break-all;
+}
+
+/* ── Tables ────────────────────────────────────────────── */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0 24px;
+    font-size: 10pt;
+}
+th {
+    background: {{ brand_color }};
+    color: #fff;
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 9.5pt;
+}
+td {
+    padding: 7px 12px;
+    border-bottom: 1px solid #e2e8f0;
+}
+tr:nth-child(even) td {
+    background: #f8fafc;
+}
+
+/* ── Callout Boxes ─────────────────────────────────────── */
+.callout {
+    padding: 14px 18px;
+    margin: 18px 0;
+    border-radius: 6px;
+    font-size: 10pt;
+    page-break-inside: avoid;
+}
+.callout-info    { background: #eff6ff; border-left: 3px solid #3b82f6; }
+.callout-warning { background: #fefce8; border-left: 3px solid #eab308; }
+.callout-success { background: #f0fdf4; border-left: 3px solid #22c55e; }
+.callout-danger  { background: #fef2f2; border-left: 3px solid #ef4444; }
+
+/* ── Evidence Box ─────────────────────────────────────── */
+.evidence-box {
+    background: #f8fafc;
+    border-left: 3px solid #94a3b8;
+    padding: 8px 14px;
+    margin: 6px 0;
+    font-size: 9pt;
+    color: #475569;
+    font-style: italic;
+    border-radius: 0 4px 4px 0;
+}
+
+/* ── Lists ─────────────────────────────────────────────── */
+ul, ol {
+    margin: 8px 0 8px 22px;
+}
+li {
+    margin-bottom: 4px;
+    font-size: 10.5pt;
+}
+
+/* ── Links ─────────────────────────────────────────────── */
+a {
+    color: {{ brand_color }};
+    text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+
+/* ── Section empty note ───────────────────────────────── */
+.no-findings {
+    color: #94a3b8;
+    font-style: italic;
+    padding: 10px 0;
+    font-size: 10pt;
+}
+
+/* ── Footer ────────────────────────────────────────────── */
+.footer {
+    border-top: 2px solid #e2e8f0;
+    margin-top: 18px;
+    padding-top: 10px;
+    font-size: 9pt;
+    color: #94a3b8;
+    text-align: center;
+}
+.footer strong {
+    color: {{ brand_color }};
+}
+
+/* ── Section divider (no page break, just spacing) ─────── */
+.section-divider {
+    margin-top: 32px;
+}
+
+/* ── Paragraph spacing ─────────────────────────────────── */
+p {
+    margin: 10px 0 14px;
+    font-size: 10.5pt;
+}
+
+/* ── Horizontal Rule ───────────────────────────────────── */
+hr {
+    border: none;
+    border-top: 1px solid #e2e8f0;
+    margin: 20px 0;
+}
+
+/* ── Score text ────────────────────────────────────────── */
+.score-text {
+    font-size: 9pt;
+    font-weight: 600;
+    color: #334155;
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     MAIN CONTENT
+     ══════════════════════════════════════════════════════════ -->
+<div class="content">
+
+<div class="report-header">
+    <h1>{{ brand_name }}</h1>
+    <div class="subtitle">Daily Intelligence Digest</div>
+    <table class="meta-table">
+        <tr>
+            <td class="label">Generated</td>
+            <td>{{ generation_date }}</td>
+            <td class="label">Run ID</td>
+            <td>{{ run_id }}</td>
+            <td class="label">Findings</td>
+            <td>{{ total_findings }}</td>
+        </tr>
+    </table>
+</div>
+
+<div class="report-kicker">Executive Briefing</div>
+<div class="report-title">AI Intelligence Daily Report</div>
+<div class="report-subtitle">Structured overview of critical updates across research, models, competitors, and benchmarks.</div>
+
+<!-- ── Executive Summary ──────────────────────────────────── -->
+<div class="exec-summary">
+    <h2>Executive Summary</h2>
+    {% if executive_summary %}
+    <p>{{ executive_summary }}</p>
+    {% else %}
+    <p>No executive summary was generated for this run.</p>
+    {% endif %}
+</div>
+
+<!-- ── Top Findings Quick-Scan Table ──────────────────────── -->
+{% if findings %}
+<h2>Top Findings at a Glance</h2>
+<table>
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Title</th>
+            <th>Domain</th>
+            <th>Confidence</th>
+            <th>Impact</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for f in findings[:10] %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ f.get("title", "Untitled") }}</td>
+            <td>
+                {% set src = f.get("agent_source", "") %}
+                {% if "research" in src %}
+                <span class="domain-badge badge-research">Research</span>
+                {% elif "competitor" in src %}
+                <span class="domain-badge badge-competitor">Competitor</span>
+                {% elif "model" in src %}
+                <span class="domain-badge badge-model">Model</span>
+                {% elif "benchmark" in src %}
+                <span class="domain-badge badge-benchmark">Benchmark</span>
+                {% else %}
+                <span class="domain-badge badge-research">Intel</span>
+                {% endif %}
+            </td>
+            <td>
+                {% set conf = f.get("confidence", "MEDIUM") %}
+                {% if conf == "HIGH" %}
+                <span class="confidence-badge confidence-high">HIGH</span>
+                {% elif conf == "LOW" %}
+                <span class="confidence-badge confidence-low">LOW</span>
+                {% else %}
+                <span class="confidence-badge confidence-medium">MEDIUM</span>
+                {% endif %}
+            </td>
+            <td>
+                <span class="score-text">{{ "%.2f"|format(f.get("impact_score", 0.0)|float) }}</span>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<!-- ══════════════════════════════════════════════════════════
+     DEEP-DIVE SECTIONS (by agent domain)
+     Only sections WITH findings are rendered — no empty pages.
+     No forced page breaks — content fills naturally.
+     ══════════════════════════════════════════════════════════ -->
+
+{% set section_map = {
+    "research_intel":        {"label": "Research Publications",                          "badge": "badge-research",   "badge_text": "Research"},
+    "model_intel":           {"label": "Foundational Models",                           "badge": "badge-model",      "badge_text": "Model"},
+    "competitor_intel":      {"label": "Competitor Releases",                            "badge": "badge-competitor", "badge_text": "Competitor"},
+    "benchmark_intel":       {"label": "HF Benchmarks, Leaderboards & Trending Models", "badge": "badge-benchmark",  "badge_text": "Benchmark"}
+} %}
+
+{% set section_keys_map = {"research_intel": "research", "competitor_intel": "competitors", "model_intel": "models", "benchmark_intel": "benchmarks"} %}
+
+{% for agent_key, meta in section_map.items() %}
+{% set agent_findings = grouped_findings.get(agent_key, []) %}
+{% set section_narrative = sections.get(section_keys_map.get(agent_key, ""), "") %}
+
+{# Only render section if it has findings OR a narrative #}
+{% if agent_findings or section_narrative %}
+<div class="section-divider"></div>
+<h2>{{ meta.label }}</h2>
+
+{# Render the narrative from the Digest Agent if available #}
+{% if section_narrative %}
+<div class="callout callout-info">
+    <p>{{ section_narrative }}</p>
+</div>
+{% endif %}
+
+{# Render individual finding cards #}
+{% if agent_findings %}
+    {% for f in agent_findings %}
+    <div class="finding-card">
+        <span class="domain-badge {{ meta.badge }}">{{ meta.badge_text }}</span>
+
+        {% set conf = f.get("confidence", "MEDIUM") %}
+        {% if conf == "HIGH" %}
+        <span class="confidence-badge confidence-high">HIGH</span>
+        {% elif conf == "LOW" %}
+        <span class="confidence-badge confidence-low">LOW</span>
+        {% else %}
+        <span class="confidence-badge confidence-medium">MEDIUM</span>
+        {% endif %}
+
+        <div class="title">{{ f.get("title", "Untitled Finding") }}</div>
+
+        {% if f.get("what_changed") %}
+        <div class="what-changed"><strong>What changed:</strong> {{ f.get("what_changed") }}</div>
+        {% endif %}
+
+        {% if f.get("why_it_matters") %}
+        <div class="why-matters"><strong>Why it matters:</strong> {{ f.get("why_it_matters") }}</div>
+        {% endif %}
+
+        {# Impact score bar #}
+        {% set score = f.get("impact_score", 0.0)|float %}
+        <div class="meta-row">
+            Impact Score: <span class="score-text">{{ "%.2f"|format(score) }}</span>
+            (R={{ "%.2f"|format(f.get("relevance", 0.0)|float) }}
+             N={{ "%.2f"|format(f.get("novelty", 0.0)|float) }}
+             C={{ "%.2f"|format(f.get("credibility", 0.0)|float) }}
+             A={{ "%.2f"|format(f.get("actionability", 0.0)|float) }})
+        </div>
+        <div class="score-bar">
+            <div class="score-fill" style="width: {{ (score * 100)|int }}%"></div>
+        </div>
+
+        {# Entities #}
+        {% if f.get("entities") %}
+        <div style="margin: 6px 0;">
+            {% for entity in f.get("entities", []) %}
+            <span class="entity-tag">{{ entity }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {# Evidence snippet #}
+        {% if f.get("evidence_snippet") %}
+        <div class="evidence-box">"{{ f.get("evidence_snippet") }}"</div>
+        {% endif %}
+
+        {# Source URL #}
+        {% if f.get("source_url") %}
+        <div class="source-link">Source: <a href="{{ f.get('source_url') }}">{{ f.get("source_url") }}</a></div>
+        {% endif %}
+
+        {# Publisher + date #}
+        <div class="meta-row">
+            {% if f.get("publisher") %}Publisher: {{ f.get("publisher") }} | {% endif %}
+            {% if f.get("date_detected") %}Detected: {{ f.get("date_detected") }} | {% endif %}
+            {% if f.get("category") %}Category: {{ f.get("category") }}{% endif %}
+        </div>
+    </div>
+    {% endfor %}
+{% endif %}
+
+{% endif %}
+{% endfor %}
+
+<!-- ══════════════════════════════════════════════════════════
+     APPENDIX: Source Links & Evidence Snippets
+     ══════════════════════════════════════════════════════════ -->
+{% if findings %}
+<div class="section-divider"></div>
+<h2>Appendix: Sources & Evidence</h2>
+<table>
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Title</th>
+            <th>Source URL</th>
+            <th>Evidence Snippet</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for f in findings %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ f.get("title", "Untitled")[:60] }}</td>
+            <td><a href="{{ f.get('source_url', '#') }}">{{ f.get("source_url", "N/A")[:50] }}</a></td>
+            <td>{{ f.get("evidence_snippet", "N/A")[:100] }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<!-- ── Footer ─────────────────────────────────────────────── -->
+<div class="footer">
+    <p>Powered by <strong>{{ brand_name }}</strong> | Multi-Agent AI Intelligence Platform</p>
+    <p>{{ generation_date }} | Run: {{ run_id }} | Impact = 0.35*Relevance + 0.25*Novelty + 0.20*Credibility + 0.20*Actionability</p>
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,27 @@
+# Impact scoring weights
+
+impact_score_weights:
+  relevance: 0.35
+  novelty: 0.25
+  credibility: 0.20
+  actionability: 0.20
+
+# Relevance scoring rubric (for research agent)
+relevance_rubric:
+  high_weight_topics:
+    - benchmark_evaluation: 0.30
+    - data_curation: 0.30
+    - agentic_workflows: 0.25
+    - multimodal: 0.25
+    - safety_alignment: 0.20
+    - inference_efficiency: 0.20
+    - general_llm: 0.10
+  low_weight_penalties:
+    - pure_theory: -0.30
+    - narrow_domain: -0.20
+    - workshop_paper: -0.10
+  thresholds:
+    skip_below: 0.4
+    low_priority: 0.4
+    key_finding: 0.6
+    must_read: 0.8

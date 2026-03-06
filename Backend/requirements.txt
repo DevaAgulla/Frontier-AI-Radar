@@ -1,0 +1,68 @@
+# =============================================================================
+# CORE — required for first agent end-to-end run
+# =============================================================================
+
+# LangGraph + LLM providers
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-google-genai>=2.0.0
+langchain-openai>=0.3.0
+google-generativeai>=0.8.0
+langsmith>=0.1.0
+
+# Web fetching (used by research crawler + agents)
+httpx>=0.27.0
+beautifulsoup4>=4.12.0
+feedparser>=6.0.10
+
+# Data & config
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+pyyaml>=6.0.1
+
+# Database (SQLite via SQLAlchemy — no external server needed)
+sqlalchemy>=2.0.0
+
+# Utilities
+structlog>=24.1.0
+watchfiles>=1.0.0
+
+# PDF generation (pure Python, no system deps)
+xhtml2pdf>=0.2.11
+
+# Templating
+jinja2>=3.1.0
+
+# Hugging Face (HF Leaderboard & Benchmark Tracker)
+huggingface_hub>=0.20.0
+datasets>=2.16.0
+
+# =============================================================================
+# PHASE 2 — needed for full pipeline (UI, PDF, email, scheduler)
+# =============================================================================
+
+# Search APIs
+tavily-python>=0.3.0
+arxiv>=2.1.0
+
+# Vector store (entity memory)
+chromadb>=0.4.0
+sentence-transformers>=2.3.0
+
+# Web framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+streamlit>=1.31.0
+
+# PDF & rendering
+weasyprint>=60.0
+
+# Headless browser (JS-rendered pages)
+playwright>=1.40.0
+
+# Scheduler
+apscheduler>=3.10.0
+
+# PDF extraction (lightweight, no system deps)
+pdfplumber>=0.10.0
