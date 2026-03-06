@@ -32,7 +32,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as TriggerRunPayload;
-    const { agent_ids, user_id, recipient_emails = [], urls = [], url_mode = "default", since_days = 1, async_run = false } = body;
+    const { agent_ids, user_id, recipient_emails = [], extra_recipients = [], urls = [], url_mode = "default", since_days = 1, async_run = false } = body;
     if (!agent_ids?.length) {
       return NextResponse.json(
         { error: "agent_ids (non-empty array) is required", status: 400 },
@@ -43,12 +43,14 @@ export async function POST(request: Request) {
     const mappedAgents = agent_ids.map(uiAgentToBackend);
     const mode = mappedAgents.length === 4 ? "full" : mappedAgents.join(",");
 
-    // Prefer user_id (logged-in user) over ad-hoc email
+    // user_id = logged-in user (primary recipient); extra_recipients = additional CCs
     const primaryEmail = recipient_emails[0]?.trim();
+    const validExtras = extra_recipients.filter((e) => e.trim().length > 0);
     const runPayload = {
       mode,
       since_days,
       ...(user_id ? { user_id } : { email: primaryEmail || undefined }),
+      ...(validExtras.length > 0 ? { extra_recipients: validExtras } : {}),
       urls: urls.filter((u) => u.trim().length > 0),
       url_mode,
     };

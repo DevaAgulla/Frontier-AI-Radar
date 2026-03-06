@@ -80,6 +80,7 @@ export interface TriggerRunPayload {
   agent_ids: AgentId[];
   user_id?: number;
   recipient_emails?: string[];
+  extra_recipients?: string[];
   urls?: string[];
   url_mode?: "default" | "append" | "custom";
   since_days?: number;

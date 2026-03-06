@@ -27,6 +27,7 @@ export default function CompetitorReportPage() {
     const res = await api.triggerRun({
       agent_ids: ["competitor"],
       ...(user ? { user_id: user.id } : { recipient_emails: recipientEmails }),
+      ...(user && recipientEmails.length > 0 ? { extra_recipients: recipientEmails } : {}),
       urls: [url],
       url_mode: "custom",
       async_run: true,

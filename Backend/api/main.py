@@ -401,10 +401,11 @@ async def _generate_llm_section_comparison(
 class RunRequest(BaseModel):
     mode: str = "full"
     since_days: int = 1
-    user_id: Optional[int] = None   # subscribed user id (UI trigger)
-    email: Optional[str] = None     # ad-hoc email (UI trigger, no subscription needed)
-    urls: List[str] = []            # custom URLs for targeted crawling
-    url_mode: str = "default"       # "default" | "append" | "custom"
+    user_id: Optional[int] = None          # subscribed user id (UI trigger)
+    email: Optional[str] = None            # ad-hoc email (UI trigger, no subscription needed)
+    extra_recipients: List[str] = []       # additional emails to CC alongside user_id/email
+    urls: List[str] = []                   # custom URLs for targeted crawling
+    url_mode: str = "default"              # "default" | "append" | "custom"
 
     @field_validator("mode")
     @classmethod
@@ -445,6 +446,8 @@ def _resolve_recipients_and_user(req: RunRequest) -> tuple[List[str], Optional[i
       1. If user_id provided → send to that specific user
       2. If email provided   → send to that email (auto-register)
       3. Otherwise           → send to ALL registered users + .env recipients (deduped)
+
+    In all cases, extra_recipients are merged in (deduped).
     """
     email_recipients: List[str] = []
     resolved_user_id: Optional[int] = req.user_id
@@ -491,6 +494,15 @@ def _resolve_recipients_and_user(req: RunRequest) -> tuple[List[str], Optional[i
                 seen.add(email)
                 all_emails.append(email)
         email_recipients = all_emails
+
+    # ── Merge extra_recipients (deduped, preserve order) ──────────
+    if req.extra_recipients:
+        seen_set: set[str] = {e.strip().lower() for e in email_recipients}
+        for extra in req.extra_recipients:
+            normalized = extra.strip().lower()
+            if normalized and "@" in normalized and normalized not in seen_set:
+                seen_set.add(normalized)
+                email_recipients.append(normalized)
 
     logger.info(
         "Recipients resolved",
