@@ -6,11 +6,13 @@ import { useRouter } from "next/navigation";
 import AgentPipelineDragDrop from "../components/AgentPipelineDragDrop";
 import { useRunConfig } from "../context/RunConfigContext";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/AuthContext";
 import { api } from "@/lib/api";
 import type { AgentId } from "@/lib/types";
 
 export default function BuildReportPage() {
   const { recipientEmails } = useRunConfig();
+  const { user } = useAuth();
   const router = useRouter();
   const { pushToast } = useToast();
   const [selectedAgents, setSelectedAgents] = useState<AgentId[]>([]);
@@ -29,7 +31,7 @@ export default function BuildReportPage() {
         agent_ids: selectedAgents,
         urls: [],
         url_mode: "default",
-        recipient_emails: recipientEmails,
+        ...(user ? { user_id: user.id } : { recipient_emails: recipientEmails }),
         async_run: true,
       });
       if (res.error) {

@@ -78,6 +78,7 @@ export interface Digest {
 
 export interface TriggerRunPayload {
   agent_ids: AgentId[];
+  user_id?: number;
   recipient_emails?: string[];
   urls?: string[];
   url_mode?: "default" | "append" | "custom";

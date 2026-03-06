@@ -7,10 +7,12 @@ import URLInput from "../components/URLInput";
 import EmailRecipients from "../components/EmailRecipients";
 import { useRunConfig } from "../context/RunConfigContext";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/AuthContext";
 import { api } from "@/lib/api";
 
 export default function CompetitorReportPage() {
   const { competitorUrl, setCompetitorUrl, recipientEmails, setRecipientEmails } = useRunConfig();
+  const { user } = useAuth();
   const router = useRouter();
   const { pushToast } = useToast();
   const [submitting, setSubmitting] = useState(false);
@@ -24,7 +26,7 @@ export default function CompetitorReportPage() {
     setSubmitting(true);
     const res = await api.triggerRun({
       agent_ids: ["competitor"],
-      recipient_emails: recipientEmails,
+      ...(user ? { user_id: user.id } : { recipient_emails: recipientEmails }),
       urls: [url],
       url_mode: "custom",
       async_run: true,
