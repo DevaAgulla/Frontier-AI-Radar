@@ -82,13 +82,14 @@ class Run(Base):
 
 
 class User(Base):
-    """Subscribed users who receive digest emails."""
+    """Subscribed users who receive digest emails (and optional login credentials)."""
 
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(200), nullable=False)
     email = Column(String(320), nullable=False, unique=True)
+    password_hash = Column(String(256), nullable=True)  # nullable — existing subscribers don't need a password
     subscribed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationships

@@ -46,11 +46,14 @@ class Settings(BaseSettings):
     mcp_email_server_url: Optional[str] = Field(default=None, env="MCP_EMAIL_SERVER_URL")
     mcp_email_api_key: Optional[str] = Field(default=None, env="MCP_EMAIL_API_KEY")
 
-    # SMTP (email delivery)
+    # SMTP (email delivery — local dev fallback)
     smtp_host: str = Field(default="smtp.gmail.com", env="SMTP_HOST")
     smtp_port: int = Field(default=587, env="SMTP_PORT")
     smtp_user: Optional[str] = Field(default=None, env="SMTP_USER")
     smtp_password: Optional[str] = Field(default=None, env="SMTP_PASSWORD")
+
+    # Brevo (primary email provider — 300 free emails/day, any recipient)
+    brevo_api_key: Optional[str] = Field(default=None, env="BREVO_API_KEY")
 
     # Email
     email_from: str = Field(..., env="EMAIL_FROM")

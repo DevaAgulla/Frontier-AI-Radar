@@ -113,13 +113,30 @@ async def notification_agent(state: RadarState) -> RadarState:
         if (state.get("config") or {}).get("suppress_email"):
             logger.info("Notification Agent: suppressed for compare run", run_id=run_id)
             return {"email_status": "skipped"}
-        recipients = state.get("email_recipients", [])
+        # Collect recipients from pipeline state (resolved by API from DB users)
+        state_recipients = state.get("email_recipients", [])
 
-        # Fallback to .env if no recipients in state (backward compat)
-        if not recipients:
-            recipients = [e.strip() for e in settings.email_recipients.split(",") if e.strip()]
+        # Also include .env EMAIL_RECIPIENTS for belt-and-suspenders coverage
+        env_recipients = [
+            e.strip().lower()
+            for e in settings.email_recipients.split(",")
+            if e.strip()
+        ]
 
-        logger.info("Notification Agent: starting", recipients=len(recipients))
+        # Merge & deduplicate (state first, then .env extras)
+        seen: set = set()
+        recipients: list = []
+        for email in state_recipients + env_recipients:
+            normalized = email.strip().lower()
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                recipients.append(normalized)
+
+        logger.info(
+            "Notification Agent: starting",
+            recipients=len(recipients),
+            emails=recipients,
+        )
 
         # Extract executive summary (first section of digest)
         exec_summary = digest_md[:2000] if len(digest_md) > 2000 else digest_md

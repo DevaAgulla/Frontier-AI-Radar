@@ -3,15 +3,23 @@
 import os
 import json
 import asyncio
+import hashlib
+import secrets
 import uvicorn
+import structlog
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, field_validator
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone, timedelta, date
 from langchain_core.messages import HumanMessage
+
+try:
+    import jwt as pyjwt  # PyJWT
+except ImportError:
+    pyjwt = None  # type: ignore
 
 from pipeline.runner import (
     run_radar,
@@ -24,6 +32,8 @@ from db.connection import init_db, get_session
 from db.models import Run, Extraction, Finding, Resource, User, Competitor
 from config.settings import settings
 from agents.base_agent import _build_llm, parse_json_object
+
+logger = structlog.get_logger()
 
 
 @asynccontextmanager
@@ -429,7 +439,13 @@ class RunResponse(BaseModel):
 
 
 def _resolve_recipients_and_user(req: RunRequest) -> tuple[List[str], Optional[int], str]:
-    """Resolve recipient emails and user id from request."""
+    """Resolve recipient emails and user id from request.
+
+    Priority:
+      1. If user_id provided → send to that specific user
+      2. If email provided   → send to that email (auto-register)
+      3. Otherwise           → send to ALL registered users + .env recipients (deduped)
+    """
     email_recipients: List[str] = []
     resolved_user_id: Optional[int] = req.user_id
     trigger = "UI" if (req.user_id or req.email) else "job"
@@ -455,10 +471,33 @@ def _resolve_recipients_and_user(req: RunRequest) -> tuple[List[str], Optional[i
             resolved_user_id = user.id
             email_recipients = [user.email]
     else:
+        # ── Collect ALL registered users from DB ──────────────────
         with get_session() as session:
             users = session.query(User).all()
-            email_recipients = [u.email for u in users]
+            db_emails = [u.email.strip().lower() for u in users if u.email]
 
+        # ── Also include .env EMAIL_RECIPIENTS (belt-and-suspenders) ──
+        env_emails = [
+            e.strip().lower()
+            for e in settings.email_recipients.split(",")
+            if e.strip()
+        ]
+
+        # Merge & deduplicate (preserve order, DB first)
+        seen: set[str] = set()
+        all_emails: List[str] = []
+        for email in db_emails + env_emails:
+            if email and email not in seen:
+                seen.add(email)
+                all_emails.append(email)
+        email_recipients = all_emails
+
+    logger.info(
+        "Recipients resolved",
+        count=len(email_recipients),
+        trigger=trigger,
+        emails=email_recipients,
+    )
     return email_recipients, resolved_user_id, trigger
 
 
@@ -1554,6 +1593,169 @@ async def delete_competitor(competitor_id: int):
         session.commit()
 
         return {"message": f"Competitor '{competitor.name}' deleted successfully."}
+
+
+# ── Authentication ────────────────────────────────────────────────────────
+
+JWT_SECRET = settings.api_secret_key or "frontier-ai-radar-default-secret"
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRY_HOURS = 72
+
+
+def _hash_password(password: str) -> str:
+    """Hash a password with a random salt using PBKDF2."""
+    salt = secrets.token_hex(16)
+    hash_val = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
+    return f"{salt}${hash_val.hex()}"
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    """Verify a password against a stored hash."""
+    try:
+        salt, hash_hex = stored.split("$", 1)
+        hash_val = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
+        return hash_val.hex() == hash_hex
+    except (ValueError, AttributeError):
+        return False
+
+
+def _create_jwt(user_id: int, email: str, name: str) -> str:
+    """Create a JWT token for the given user."""
+    if pyjwt is None:
+        # Fallback: simple base64 token (not secure, but works without PyJWT)
+        import base64
+        payload_str = json.dumps({"user_id": user_id, "email": email, "name": name})
+        return base64.urlsafe_b64encode(payload_str.encode()).decode()
+    payload = {
+        "user_id": user_id,
+        "email": email,
+        "name": name,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRY_HOURS),
+        "iat": datetime.now(timezone.utc),
+    }
+    return pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def _decode_jwt(token: str) -> Dict[str, Any]:
+    """Decode and validate a JWT token."""
+    if pyjwt is None:
+        import base64
+        try:
+            payload_str = base64.urlsafe_b64decode(token.encode()).decode()
+            return json.loads(payload_str)
+        except Exception:
+            raise HTTPException(status_code=401, detail="Invalid token.")
+    try:
+        return pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired. Please sign in again.")
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+
+class SignupRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
+class SigninRequest(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/api/v1/auth/signup")
+async def auth_signup(req: SignupRequest):
+    """
+    Register a new user account.
+
+    If the email already exists as a subscriber (no password), it will be
+    upgraded to a full account with login credentials.
+    """
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+    if "@" not in req.email:
+        raise HTTPException(status_code=400, detail="Please provide a valid email address.")
+
+    with get_session() as session:
+        existing = session.query(User).filter(User.email == req.email.strip().lower()).first()
+
+        if existing and existing.password_hash:
+            raise HTTPException(
+                status_code=409,
+                detail="An account with this email already exists. Please sign in.",
+            )
+
+        if existing:
+            # Upgrade existing subscriber to full account
+            existing.password_hash = _hash_password(req.password)
+            if req.name.strip():
+                existing.name = req.name.strip()
+            session.commit()
+            session.refresh(existing)
+            token = _create_jwt(existing.id, existing.email, existing.name)
+            return {
+                "token": token,
+                "user": {"id": existing.id, "name": existing.name, "email": existing.email},
+            }
+
+        # Create new user
+        user = User(
+            name=req.name.strip(),
+            email=req.email.strip().lower(),
+            password_hash=_hash_password(req.password),
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+
+        token = _create_jwt(user.id, user.email, user.name)
+        return {
+            "token": token,
+            "user": {"id": user.id, "name": user.name, "email": user.email},
+        }
+
+
+@app.post("/api/v1/auth/signin")
+async def auth_signin(req: SigninRequest):
+    """
+    Authenticate a user and return a JWT token.
+    """
+    with get_session() as session:
+        user = session.query(User).filter(User.email == req.email.strip().lower()).first()
+
+        if not user or not user.password_hash:
+            raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+        if not _verify_password(req.password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+        token = _create_jwt(user.id, user.email, user.name)
+        return {
+            "token": token,
+            "user": {"id": user.id, "name": user.name, "email": user.email},
+        }
+
+
+@app.get("/api/v1/auth/me")
+async def auth_me(request: Request):
+    """
+    Validate the current JWT token and return the authenticated user.
+    """
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authorization header.")
+
+    token = auth_header.split(" ", 1)[1]
+    payload = _decode_jwt(token)
+
+    return {
+        "user": {
+            "id": payload.get("user_id"),
+            "name": payload.get("name"),
+            "email": payload.get("email"),
+        }
+    }
 
 
 # ── Start ────────────────────────────────────────────────────────────────

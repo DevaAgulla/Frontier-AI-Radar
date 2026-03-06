@@ -6,555 +6,1174 @@
 <style>
 @page {
     size: A4;
-    margin: 22pt 24pt 24pt 24pt;
+    margin: 18pt 20pt 20pt 20pt;
+
+    @frame footer {
+        -pdf-frame-content: page-footer;
+        bottom: 0;
+        margin-left: 20pt;
+        margin-right: 20pt;
+        height: 24pt;
+    }
 }
 
-/* ── Reset & Base ──────────────────────────────────────── */
+/* ══════════ RESET & BASE ══════════ */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
     font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
-    color: #1e293b;
-    line-height: 1.6;
-    font-size: 11pt;
+    color: #1a1d23;
+    line-height: 1.65;
+    font-size: 10pt;
     background: #fff;
 }
 
-/* ── First-page Header (compact, professional) ─────────── */
-.report-header {
-    border: 1px solid #dbeafe;
-    border-left: 5px solid {{ brand_color }};
-    border-radius: 8px;
-    background: #f8fbff;
-    padding: 12px 14px;
-    margin: 0 0 10px 0;
-    page-break-inside: avoid;
+/* ══════════ COVER PAGE ══════════ */
+.cover {
+    page-break-after: always;
 }
-.report-header h1 {
-    font-size: 18pt;
+.cover-top {
+    background: #eef2ff;
+    padding: 44px 42px 36px;
+    border-bottom: 1px solid #dde6ff;
+}
+.cover-eyebrow {
+    font-size: 8pt;
     font-weight: 700;
-    color: #0f172a;
-    margin-bottom: 2px;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: #7c93f0;
+    margin-bottom: 16px;
 }
-.report-header .subtitle {
+.cover-title {
+    font-size: 32pt;
+    font-weight: 800;
+    color: #1a1d23;
+    line-height: 1.1;
+    letter-spacing: -0.5px;
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+.cover-title-accent {
+    color: {{ brand_color }};
+}
+.cover-tagline {
     font-size: 10.5pt;
-    color: #334155;
-    margin-bottom: 8px;
+    color: #5a6480;
+    margin-top: 10px;
 }
-.meta-table {
+.cover-meta-box {
+    display: inline-block;
+    margin-top: 18px;
+    background: #fff;
+    border: 1px solid #dde6ff;
+    border-radius: 6px;
+    padding: 7px 14px;
+}
+.live-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #22c55e;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+.cover-meta-text {
+    font-size: 9pt;
+    color: #374151;
+    font-weight: 500;
+    vertical-align: middle;
+}
+.cover-bottom {
+    padding: 24px 42px 30px;
+    background: #f7f9fc;
+}
+
+/* Section chip cards on cover */
+.chip-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 10px 0;
+}
+.chip-cell {
+    background: #fff;
+    border: 1px solid #edf0f4;
+    border-radius: 8px;
+    padding: 14px 12px;
+    text-align: left;
+    width: 25%;
+    vertical-align: top;
+}
+.chip-icon {
+    font-size: 18px;
+    margin-bottom: 4px;
+}
+.chip-num {
+    font-size: 20pt;
+    font-weight: 800;
+    line-height: 1;
+}
+.chip-label {
+    font-size: 8pt;
+    color: #8a92a0;
+    font-weight: 500;
+    margin-top: 2px;
+}
+
+.cover-footer-bar {
+    padding: 12px 42px;
+    border-top: 1px solid #edf0f4;
+    font-size: 8pt;
+    color: #8a92a0;
+}
+.cover-footer-bar strong {
+    color: {{ brand_color }};
+}
+
+/* ══════════ RUNNING HEADER ══════════ */
+.run-header {
+    padding: 8px 36px;
+    border-bottom: 1px solid #edf0f4;
+    background: #fafbff;
+}
+.run-header-brand {
+    font-size: 8pt;
+    font-weight: 800;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: {{ brand_color }};
+}
+.run-header-issue {
+    font-size: 8pt;
+    color: #8a92a0;
+    font-weight: 500;
+    float: right;
+}
+
+/* ══════════ TABLE OF CONTENTS ══════════ */
+.toc-page {
+    padding: 36px 42px 40px;
+    page-break-after: always;
+}
+.page-eyebrow {
+    font-size: 7.5pt;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: #8a92a0;
+    margin-bottom: 4px;
+}
+.page-title {
+    font-size: 20pt;
+    font-weight: 800;
+    color: #1a1d23;
+    margin-bottom: 24px;
+    letter-spacing: -0.3px;
+    border: none;
+    padding-bottom: 0;
+}
+
+.toc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10pt;
+}
+.toc-table td {
+    padding: 11px 6px;
+    border-bottom: 1px solid #edf0f4;
+    vertical-align: middle;
+}
+.toc-table tr:last-child td {
+    border-bottom: none;
+}
+.toc-num {
+    font-size: 8pt;
+    font-weight: 700;
+    color: #8a92a0;
+    width: 24px;
+    font-family: 'Courier New', monospace;
+}
+.toc-bar {
+    width: 4px;
+    height: 30px;
+    border-radius: 2px;
+    display: inline-block;
+}
+.toc-bar-cell {
+    width: 18px;
+    padding-right: 10px;
+}
+.toc-section-name {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #1a1d23;
+}
+.toc-section-desc {
+    font-size: 9pt;
+    color: #8a92a0;
+}
+.toc-pill {
+    font-size: 8pt;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    display: inline-block;
+}
+.toc-pg {
+    font-size: 9pt;
+    font-weight: 700;
+    color: #8a92a0;
+    font-family: 'Courier New', monospace;
+    text-align: right;
+    width: 28px;
+}
+
+/* ══════════ EXEC SUMMARY PAGE ══════════ */
+.exec-page {
+    padding: 32px 42px 36px;
+    page-break-after: always;
+}
+
+/* KPI row using table */
+.kpi-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 10px 0;
+    margin-bottom: 20px;
+}
+.kpi-cell {
+    border-radius: 8px;
+    padding: 14px;
+    border: 1px solid #edf0f4;
+    background: #fff;
+    width: 25%;
+    vertical-align: top;
+}
+.kpi-icon {
+    font-size: 14pt;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+.kpi-label {
+    font-size: 8pt;
+    font-weight: 600;
+    color: #8a92a0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    vertical-align: middle;
+}
+.kpi-num {
+    font-size: 24pt;
+    font-weight: 800;
+    line-height: 1;
+    margin-top: 6px;
+}
+
+.signal-box {
+    border-radius: 8px;
+    padding: 16px 18px;
+    border: 1px solid #dde6ff;
+    background: #f5f8ff;
+}
+.signal-box-head {
+    font-size: 9pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: {{ brand_color }};
+    margin-bottom: 10px;
+}
+.sig-item {
+    margin-bottom: 7px;
+    font-size: 10pt;
+    line-height: 1.55;
+}
+.sig-item:last-child {
+    margin-bottom: 0;
+}
+.sig-num {
+    font-size: 9pt;
+    font-weight: 800;
+    color: {{ brand_color }};
+    margin-right: 6px;
+}
+
+/* ══════════ SECTION BAND ══════════ */
+.sec-band-table {
     width: 100%;
     border-collapse: collapse;
     margin: 0;
-    font-size: 8.8pt;
 }
-.meta-table td {
+.sec-band-table td {
+    padding: 18px 42px 14px;
+    vertical-align: middle;
+    border-bottom: 1px solid #edf0f4;
+}
+.sec-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    text-align: center;
+    line-height: 36px;
+    font-size: 16px;
+    color: #fff;
+    display: inline-block;
+    margin-right: 12px;
+    vertical-align: middle;
+}
+.sec-title {
+    font-size: 16pt;
+    font-weight: 800;
+    letter-spacing: -0.2px;
     border: none;
-    padding: 2px 6px 2px 0;
-    color: #475569;
-}
-.meta-table .label {
-    color: #64748b;
-    font-weight: 600;
-    width: 72px;
-}
-
-/* ── Content Container ─────────────────────────────────── */
-.content {
     padding: 0;
+    margin: 0;
 }
-
-.report-kicker {
+.sec-sub {
     font-size: 9pt;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: #64748b;
-    margin-bottom: 3px;
+    color: #8a92a0;
+    margin-top: 2px;
 }
-
-.report-title {
-    font-size: 17pt;
+.sec-count-pill {
+    font-size: 9pt;
     font-weight: 700;
-    color: #0f172a;
-    margin: 0 0 6px 0;
-}
-
-.report-subtitle {
-    font-size: 10pt;
-    color: #475569;
-    margin: 0 0 10px 0;
-}
-
-/* ── Executive Summary Callout ─────────────────────────── */
-.exec-summary {
-    background: #eff6ff;
-    border-left: 4px solid {{ brand_color }};
-    padding: 16px 18px;
-    margin: 0 0 28px 0;
-    border-radius: 0 6px 6px 0;
-    page-break-inside: avoid;
-}
-.exec-summary h2 {
-    color: {{ brand_color }};
-    font-size: 13pt;
-    margin: 0 0 6px;
-    border-bottom: none;
-    padding-bottom: 0;
-}
-.exec-summary p, .exec-summary li {
-    font-size: 10pt;
-    color: #334155;
-}
-
-/* ── Section Headers ───────────────────────────────────── */
-h2 {
-    color: {{ brand_color }};
-    font-size: 14pt;
-    font-weight: 700;
-    margin: 28px 0 18px;
-    padding-bottom: 8px;
-    border-bottom: 2px solid {{ brand_color }};
-    page-break-after: avoid;
-}
-h3 {
-    color: #1e40af;
-    font-size: 11pt;
-    font-weight: 600;
-    margin: 20px 0 12px;
-}
-h4 {
-    color: #475569;
-    font-size: 11pt;
-    font-weight: 600;
-    margin: 20px 0 12px;
-}
-
-/* ── Domain Badge ──────────────────────────────────────── */
-.domain-badge {
-    display: inline-block;
     padding: 3px 10px;
-    border-radius: 12px;
-    font-size: 8pt;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 6px;
-}
-.badge-research     { background: #dbeafe; color: #1e40af; }
-.badge-competitor   { background: #fce7f3; color: #9d174d; }
-.badge-model        { background: #d1fae5; color: #065f46; }
-.badge-benchmark    { background: #fef3c7; color: #92400e; }
-
-/* ── Confidence Badge ─────────────────────────────────── */
-.confidence-badge {
+    border-radius: 14px;
     display: inline-block;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 7.5pt;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-.confidence-high   { background: #dcfce7; color: #166534; }
-.confidence-medium { background: #fef9c3; color: #854d0e; }
-.confidence-low    { background: #fee2e2; color: #991b1b; }
-
-/* ── Entity Tag ───────────────────────────────────────── */
-.entity-tag {
-    display: inline-block;
-    padding: 1px 7px;
-    border-radius: 8px;
-    font-size: 7.5pt;
-    background: #f1f5f9;
-    color: #475569;
-    margin-right: 4px;
-    margin-bottom: 3px;
+    float: right;
 }
 
-/* ── Finding Card ──────────────────────────────────────── */
-.finding-card {
-    border: 1px solid #e2e8f0;
+/* ══════════ COLOR SYSTEM ══════════ */
+/* Competitor */
+.comp-bg { background: #f0f4ff; }
+.comp-bar { background: #4361ee; }
+.comp-text { color: #4361ee; }
+.comp-tag-bg { background: #e2e9ff; }
+.comp-tag-text { color: #2d47c9; }
+
+/* Foundation Models */
+.fm-bg { background: #edfcf4; }
+.fm-bar { background: #0dab76; }
+.fm-text { color: #0dab76; }
+.fm-tag-bg { background: #d4f7e7; }
+.fm-tag-text { color: #0a8a5e; }
+
+/* Research Papers */
+.rp-bg { background: #f5f0ff; }
+.rp-bar { background: #7c4dff; }
+.rp-text { color: #7c4dff; }
+.rp-tag-bg { background: #ede3ff; }
+.rp-tag-text { color: #6235d4; }
+
+/* HF / Benchmarks */
+.hf-bg { background: #fff8f0; }
+.hf-bar { background: #ff8c42; }
+.hf-text { color: #ff8c42; }
+.hf-tag-bg { background: #ffe8d0; }
+.hf-tag-text { color: #d96b1a; }
+
+/* ══════════ CARDS ══════════ */
+.cards-area {
+    padding: 16px 42px 24px;
+}
+
+.card {
+    border: 1px solid #edf0f4;
     border-radius: 8px;
-    padding: 16px 18px;
-    margin: 20px 0;
-    background: #fafbfc;
+    margin-bottom: 14px;
+    background: #fff;
     page-break-inside: avoid;
 }
-.finding-card .title {
-    font-size: 12pt;
-    font-weight: 700;
-    color: #0f172a;
-    margin: 10px 0 8px;
-    padding: 6px 10px;
-    background: #f0f7ff;
-    border-left: 3px solid {{ brand_color }};
-    border-radius: 0 4px 4px 0;
-}
-.finding-card .what-changed {
-    font-size: 10pt;
-    color: #334155;
-    margin-bottom: 8px;
-}
-.finding-card .why-matters {
-    font-size: 10pt;
-    color: #475569;
-    font-style: italic;
-    margin-bottom: 12px;
-}
-.finding-card .score-bar {
-    height: 6px;
-    background: #e2e8f0;
-    border-radius: 3px;
-    margin: 8px 0;
-    overflow: hidden;
-}
-.finding-card .score-fill {
-    height: 100%;
-    border-radius: 3px;
-    background: {{ brand_color }};
-}
-.finding-card .meta-row {
-    font-size: 9pt;
-    color: #64748b;
-    margin-top: 10px;
-}
-.finding-card .source-link {
-    font-size: 8.5pt;
-    color: {{ brand_color }};
-    word-break: break-all;
-}
 
-/* ── Tables ────────────────────────────────────────────── */
-table {
+/* Card header */
+.ch-table {
     width: 100%;
     border-collapse: collapse;
-    margin: 16px 0 24px;
-    font-size: 10pt;
 }
-th {
-    background: {{ brand_color }};
-    color: #fff;
-    padding: 8px 12px;
-    text-align: left;
-    font-weight: 600;
-    font-size: 9.5pt;
+.ch-table td {
+    padding: 11px 14px 8px;
+    vertical-align: top;
 }
-td {
-    padding: 7px 12px;
-    border-bottom: 1px solid #e2e8f0;
-}
-tr:nth-child(even) td {
-    background: #f8fafc;
-}
-
-/* ── Callout Boxes ─────────────────────────────────────── */
-.callout {
-    padding: 14px 18px;
-    margin: 18px 0;
+.ch-logo {
+    width: 28px;
+    height: 28px;
     border-radius: 6px;
-    font-size: 10pt;
-    page-break-inside: avoid;
+    text-align: center;
+    line-height: 28px;
+    font-size: 12pt;
+    font-weight: 800;
+    color: #fff;
+    display: inline-block;
 }
-.callout-info    { background: #eff6ff; border-left: 3px solid #3b82f6; }
-.callout-warning { background: #fefce8; border-left: 3px solid #eab308; }
-.callout-success { background: #f0fdf4; border-left: 3px solid #22c55e; }
-.callout-danger  { background: #fef2f2; border-left: 3px solid #ef4444; }
+.ch-title {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #1a1d23;
+    line-height: 1.3;
+}
+.ch-sub {
+    font-size: 8pt;
+    color: #8a92a0;
+    margin-top: 1px;
+}
 
-/* ── Evidence Box ─────────────────────────────────────── */
+/* Impact pill */
+.impact {
+    display: inline-block;
+    font-size: 8pt;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 14px;
+    white-space: nowrap;
+}
+.impact-dot {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+.impact-high { background: #fff1f1; color: #e53935; }
+.impact-high .impact-dot { background: #e53935; }
+.impact-med { background: #fffbea; color: #f59e0b; }
+.impact-med .impact-dot { background: #f59e0b; }
+.impact-low { background: #f0fdf4; color: #22c55e; }
+.impact-low .impact-dot { background: #22c55e; }
+
+.cat-tag {
+    font-size: 7pt;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    display: inline-block;
+    margin-top: 4px;
+}
+
+/* Card body */
+.cb {
+    padding: 0 14px 10px;
+    font-size: 10pt;
+    color: #4b5563;
+    line-height: 1.65;
+    border-bottom: 1px solid #edf0f4;
+}
+
+/* Tags */
+.tags {
+    margin-top: 8px;
+}
+.tag {
+    display: inline-block;
+    font-size: 7pt;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-right: 4px;
+    margin-bottom: 2px;
+}
+
+/* Card footer */
+.cf {
+    padding: 6px 14px;
+    background: #fafbff;
+}
+.cf-date {
+    font-size: 8pt;
+    color: #8a92a0;
+    font-family: 'Courier New', monospace;
+}
+.cf-link {
+    font-size: 8pt;
+    font-weight: 600;
+    color: {{ brand_color }};
+    text-decoration: none;
+    float: right;
+}
+
+/* ══════════ SCORE BAR ══════════ */
+.score-bar-wrap {
+    margin: 6px 0;
+}
+.score-bar {
+    height: 5px;
+    background: #e2e8f0;
+    border-radius: 3px;
+    overflow: hidden;
+    display: block;
+    width: 100%;
+}
+.score-fill {
+    height: 5px;
+    border-radius: 3px;
+    display: block;
+}
+
+/* Score text */
+.score-text {
+    font-size: 8pt;
+    font-weight: 600;
+    color: #334155;
+    font-family: 'Courier New', monospace;
+}
+
+/* Meta row */
+.meta-row {
+    font-size: 8pt;
+    color: #64748b;
+    margin-top: 6px;
+}
+
+/* Entity tags */
+.entity-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 6px;
+    font-size: 7pt;
+    background: #f1f5f9;
+    color: #475569;
+    margin-right: 3px;
+    margin-bottom: 2px;
+}
+
+/* Evidence box */
 .evidence-box {
     background: #f8fafc;
     border-left: 3px solid #94a3b8;
-    padding: 8px 14px;
+    padding: 6px 12px;
     margin: 6px 0;
-    font-size: 9pt;
+    font-size: 8pt;
     color: #475569;
     font-style: italic;
     border-radius: 0 4px 4px 0;
 }
 
-/* ── Lists ─────────────────────────────────────────────── */
-ul, ol {
-    margin: 8px 0 8px 22px;
-}
-li {
-    margin-bottom: 4px;
-    font-size: 10.5pt;
+/* Source link */
+.source-link {
+    font-size: 7.5pt;
+    color: {{ brand_color }};
+    word-break: break-all;
+    margin-top: 4px;
 }
 
-/* ── Links ─────────────────────────────────────────────── */
+/* ══════════ DATA TABLES ══════════ */
+table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 20px;
+    font-size: 9pt;
+}
+table.data-table thead th {
+    padding: 7px 10px;
+    text-align: left;
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    border-bottom: 2px solid #edf0f4;
+}
+table.data-table tbody td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #edf0f4;
+    vertical-align: middle;
+}
+table.data-table tbody tr:nth-child(even) td {
+    background: #fafbff;
+}
+
+/* ══════════ APPENDIX ══════════ */
+.appendix {
+    padding: 32px 42px;
+}
+.appendix h3 {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #1a1d23;
+    margin-bottom: 4px;
+    margin-top: 18px;
+}
+.appendix h3:first-of-type {
+    margin-top: 0;
+}
+.appendix p {
+    font-size: 9.5pt;
+    color: #6b7280;
+    line-height: 1.75;
+    margin-bottom: 6px;
+}
+.appendix-footer-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 22px;
+    padding-top: 14px;
+    border-top: 1px solid #edf0f4;
+    font-size: 8pt;
+    color: #8a92a0;
+}
+.appendix-footer-table td {
+    padding: 4px 8px;
+    vertical-align: top;
+}
+.appendix-footer-table strong {
+    display: block;
+    color: #374151;
+    font-size: 8pt;
+    margin-bottom: 1px;
+}
+
+/* ══════════ PAGE FOOTER ══════════ */
+.pfoot {
+    padding: 6px 36px;
+    border-top: 1px solid #edf0f4;
+    background: #fafbff;
+    font-size: 7pt;
+    color: #b0b8c8;
+}
+.pfoot-brand {
+    float: left;
+}
+.pfoot-num {
+    float: right;
+    font-family: 'Courier New', monospace;
+    font-weight: 700;
+    color: #8a92a0;
+}
+
+/* ══════════ SECTION DIVIDER ══════════ */
+.section-page {
+    page-break-before: always;
+}
+
+/* ══════════ GENERAL ══════════ */
 a {
     color: {{ brand_color }};
     text-decoration: none;
 }
-a:hover { text-decoration: underline; }
-
-/* ── Section empty note ───────────────────────────────── */
-.no-findings {
-    color: #94a3b8;
-    font-style: italic;
-    padding: 10px 0;
+p {
+    margin: 6px 0 10px;
     font-size: 10pt;
 }
-
-/* ── Footer ────────────────────────────────────────────── */
-.footer {
-    border-top: 2px solid #e2e8f0;
-    margin-top: 18px;
-    padding-top: 10px;
-    font-size: 9pt;
-    color: #94a3b8;
-    text-align: center;
+ul, ol {
+    margin: 6px 0 6px 20px;
 }
-.footer strong {
-    color: {{ brand_color }};
+li {
+    margin-bottom: 3px;
+    font-size: 9.5pt;
 }
-
-/* ── Section divider (no page break, just spacing) ─────── */
-.section-divider {
-    margin-top: 32px;
-}
-
-/* ── Paragraph spacing ─────────────────────────────────── */
-p {
-    margin: 10px 0 14px;
-    font-size: 10.5pt;
-}
-
-/* ── Horizontal Rule ───────────────────────────────────── */
 hr {
     border: none;
-    border-top: 1px solid #e2e8f0;
-    margin: 20px 0;
-}
-
-/* ── Score text ────────────────────────────────────────── */
-.score-text {
-    font-size: 9pt;
-    font-weight: 600;
-    color: #334155;
+    border-top: 1px solid #edf0f4;
+    margin: 16px 0;
 }
 </style>
 </head>
 <body>
 
-<!-- ══════════════════════════════════════════════════════════
-     MAIN CONTENT
-     ══════════════════════════════════════════════════════════ -->
-<div class="content">
+{# ══════════════════════════════════════════════════
+   Compute section counts
+   ══════════════════════════════════════════════════ #}
+{% set comp_findings = grouped_findings.get("competitor_intel", []) %}
+{% set fm_findings   = grouped_findings.get("model_intel", []) %}
+{% set rp_findings   = grouped_findings.get("research_intel", []) %}
+{% set hf_findings   = grouped_findings.get("benchmark_intel", []) %}
 
-<div class="report-header">
-    <h1>{{ brand_name }}</h1>
-    <div class="subtitle">Daily Intelligence Digest</div>
-    <table class="meta-table">
-        <tr>
-            <td class="label">Generated</td>
-            <td>{{ generation_date }}</td>
-            <td class="label">Run ID</td>
-            <td>{{ run_id }}</td>
-            <td class="label">Findings</td>
-            <td>{{ total_findings }}</td>
-        </tr>
-    </table>
+{% set comp_count = comp_findings|length %}
+{% set fm_count   = fm_findings|length %}
+{% set rp_count   = rp_findings|length %}
+{% set hf_count   = hf_findings|length %}
+
+<!-- ══════════════════════════
+     PAGE 1 · COVER
+══════════════════════════ -->
+<div class="cover">
+    <div class="cover-top">
+        <div class="cover-eyebrow">Daily Intelligence Briefing</div>
+        <div class="cover-title">Frontier AI <span class="cover-title-accent">Radar</span></div>
+        <p class="cover-tagline">Executive &amp; technical digest — competitor moves, foundation models, research papers, and benchmarks.</p>
+        <div class="cover-meta-box">
+            <span class="live-dot"></span>
+            <span class="cover-meta-text">{{ generation_date }} &nbsp;·&nbsp; Run {{ run_id }}</span>
+        </div>
+    </div>
+
+    <div class="cover-bottom">
+        <table class="chip-table">
+            <tr>
+                <td class="chip-cell">
+                    <div class="chip-icon">🏢</div>
+                    <div class="chip-num" style="color:#4361ee">{{ comp_count }}</div>
+                    <div class="chip-label">Competitor Updates</div>
+                </td>
+                <td class="chip-cell">
+                    <div class="chip-icon">🧠</div>
+                    <div class="chip-num" style="color:#0dab76">{{ fm_count }}</div>
+                    <div class="chip-label">Model Releases</div>
+                </td>
+                <td class="chip-cell">
+                    <div class="chip-icon">📄</div>
+                    <div class="chip-num" style="color:#7c4dff">{{ rp_count }}</div>
+                    <div class="chip-label">Research Papers</div>
+                </td>
+                <td class="chip-cell">
+                    <div class="chip-icon">🤗</div>
+                    <div class="chip-num" style="color:#ff8c42">{{ hf_count }}</div>
+                    <div class="chip-label">HF Highlights</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="cover-footer-bar">
+        <strong>FRONTIER AI RADAR</strong>
+        <span style="float:right">Confidential · Internal Distribution Only</span>
+    </div>
 </div>
 
-<div class="report-kicker">Executive Briefing</div>
-<div class="report-title">AI Intelligence Daily Report</div>
-<div class="report-subtitle">Structured overview of critical updates across research, models, competitors, and benchmarks.</div>
+<!-- ══════════════════════════
+     PAGE 2 · TABLE OF CONTENTS
+══════════════════════════ -->
+<div class="toc-page">
+    <div class="run-header">
+        <span class="run-header-brand">Frontier AI Radar</span>
+        <span class="run-header-issue">{{ generation_date }}</span>
+    </div>
 
-<!-- ── Executive Summary ──────────────────────────────────── -->
-<div class="exec-summary">
-    <h2>Executive Summary</h2>
-    {% if executive_summary %}
-    <p>{{ executive_summary }}</p>
-    {% else %}
-    <p>No executive summary was generated for this run.</p>
-    {% endif %}
+    <div style="padding:30px 42px 30px">
+        <div class="page-eyebrow">Navigation</div>
+        <div class="page-title">Table of Contents</div>
+
+        <table class="toc-table">
+            <tr>
+                <td class="toc-num">00</td>
+                <td class="toc-bar-cell"><span class="toc-bar" style="background:#d1d5db">&nbsp;</span></td>
+                <td>
+                    <div class="toc-section-name">Executive Summary</div>
+                    <div class="toc-section-desc">Top signals, KPIs &amp; daily highlights at a glance</div>
+                </td>
+                <td><span class="toc-pill" style="background:#f1f5f9;color:#64748b">Overview</span></td>
+            </tr>
+            {% if comp_count > 0 %}
+            <tr>
+                <td class="toc-num">01</td>
+                <td class="toc-bar-cell"><span class="toc-bar" style="background:#4361ee">&nbsp;</span></td>
+                <td>
+                    <div class="toc-section-name">Competitor Landscape</div>
+                    <div class="toc-section-desc">Product launches, platform updates &amp; strategic moves</div>
+                </td>
+                <td><span class="toc-pill" style="background:#e2e9ff;color:#2d47c9">{{ comp_count }} updates</span></td>
+            </tr>
+            {% endif %}
+            {% if fm_count > 0 %}
+            <tr>
+                <td class="toc-num">02</td>
+                <td class="toc-bar-cell"><span class="toc-bar" style="background:#0dab76">&nbsp;</span></td>
+                <td>
+                    <div class="toc-section-name">Foundation Model Releases</div>
+                    <div class="toc-section-desc">Model launches, API updates, pricing &amp; eval claims</div>
+                </td>
+                <td><span class="toc-pill" style="background:#d4f7e7;color:#0a8a5e">{{ fm_count }} releases</span></td>
+            </tr>
+            {% endif %}
+            {% if rp_count > 0 %}
+            <tr>
+                <td class="toc-num">03</td>
+                <td class="toc-bar-cell"><span class="toc-bar" style="background:#7c4dff">&nbsp;</span></td>
+                <td>
+                    <div class="toc-section-name">Research Papers</div>
+                    <div class="toc-section-desc">LLMs · Multimodal · Agents · Evals · Alignment</div>
+                </td>
+                <td><span class="toc-pill" style="background:#ede3ff;color:#6235d4">{{ rp_count }} papers</span></td>
+            </tr>
+            {% endif %}
+            {% if hf_count > 0 %}
+            <tr>
+                <td class="toc-num">04</td>
+                <td class="toc-bar-cell"><span class="toc-bar" style="background:#ff8c42">&nbsp;</span></td>
+                <td>
+                    <div class="toc-section-name">Hugging Face &amp; Benchmarks</div>
+                    <div class="toc-section-desc">Leaderboards, SOTA claims &amp; dataset trends</div>
+                </td>
+                <td><span class="toc-pill" style="background:#ffe8d0;color:#d96b1a">{{ hf_count }} signals</span></td>
+            </tr>
+            {% endif %}
+            <tr>
+                <td class="toc-num">05</td>
+                <td class="toc-bar-cell"><span class="toc-bar" style="background:#e2e8f0">&nbsp;</span></td>
+                <td>
+                    <div class="toc-section-name">Appendix &amp; Sources</div>
+                    <div class="toc-section-desc">Methodology, data sources &amp; disclaimers</div>
+                </td>
+                <td><span class="toc-pill" style="background:#f8fafc;color:#94a3b8">Ref</span></td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="pfoot">
+        <span class="pfoot-brand">Frontier AI Radar · Confidential</span>
+    </div>
 </div>
 
-<!-- ── Top Findings Quick-Scan Table ──────────────────────── -->
-{% if findings %}
-<h2>Top Findings at a Glance</h2>
-<table>
-    <thead>
-        <tr>
-            <th>#</th>
-            <th>Title</th>
-            <th>Domain</th>
-            <th>Confidence</th>
-            <th>Impact</th>
-        </tr>
-    </thead>
-    <tbody>
-    {% for f in findings[:10] %}
-        <tr>
-            <td>{{ loop.index }}</td>
-            <td>{{ f.get("title", "Untitled") }}</td>
-            <td>
-                {% set src = f.get("agent_source", "") %}
-                {% if "research" in src %}
-                <span class="domain-badge badge-research">Research</span>
-                {% elif "competitor" in src %}
-                <span class="domain-badge badge-competitor">Competitor</span>
-                {% elif "model" in src %}
-                <span class="domain-badge badge-model">Model</span>
-                {% elif "benchmark" in src %}
-                <span class="domain-badge badge-benchmark">Benchmark</span>
-                {% else %}
-                <span class="domain-badge badge-research">Intel</span>
-                {% endif %}
-            </td>
-            <td>
-                {% set conf = f.get("confidence", "MEDIUM") %}
-                {% if conf == "HIGH" %}
-                <span class="confidence-badge confidence-high">HIGH</span>
-                {% elif conf == "LOW" %}
-                <span class="confidence-badge confidence-low">LOW</span>
-                {% else %}
-                <span class="confidence-badge confidence-medium">MEDIUM</span>
-                {% endif %}
-            </td>
-            <td>
-                <span class="score-text">{{ "%.2f"|format(f.get("impact_score", 0.0)|float) }}</span>
-            </td>
-        </tr>
-    {% endfor %}
-    </tbody>
-</table>
-{% endif %}
+<!-- ══════════════════════════
+     PAGE 3 · EXECUTIVE SUMMARY
+══════════════════════════ -->
+<div class="section-page">
+    <div class="run-header">
+        <span class="run-header-brand">Frontier AI Radar</span>
+        <span class="run-header-issue">§00 · Executive Summary</span>
+    </div>
+
+    <div class="exec-page">
+        <div class="page-eyebrow">00 · Executive Summary</div>
+        <div class="page-title">Today's Signal Brief</div>
+
+        <!-- KPI cards -->
+        <table class="kpi-table">
+            <tr>
+                <td class="kpi-cell" style="border-top:3px solid #4361ee">
+                    <span class="kpi-icon">🏢</span>
+                    <span class="kpi-label">Competitor</span>
+                    <div class="kpi-num" style="color:#4361ee">{{ comp_count }}</div>
+                </td>
+                <td class="kpi-cell" style="border-top:3px solid #0dab76">
+                    <span class="kpi-icon">🧠</span>
+                    <span class="kpi-label">Model Releases</span>
+                    <div class="kpi-num" style="color:#0dab76">{{ fm_count }}</div>
+                </td>
+                <td class="kpi-cell" style="border-top:3px solid #7c4dff">
+                    <span class="kpi-icon">📄</span>
+                    <span class="kpi-label">Research</span>
+                    <div class="kpi-num" style="color:#7c4dff">{{ rp_count }}</div>
+                </td>
+                <td class="kpi-cell" style="border-top:3px solid #ff8c42">
+                    <span class="kpi-icon">🤗</span>
+                    <span class="kpi-label">HF / Benchmarks</span>
+                    <div class="kpi-num" style="color:#ff8c42">{{ hf_count }}</div>
+                </td>
+            </tr>
+        </table>
+
+        <!-- Top signals -->
+        <div class="signal-box">
+            <div class="signal-box-head">🔥 Top {{ [findings|length, 5]|min }} Signals Today</div>
+            {% for f in findings[:5] %}
+            <div class="sig-item">
+                <span class="sig-num">{{ loop.index }}.</span>
+                <strong>{{ f.get("title", "Untitled") }}</strong>
+                {% if f.get("what_changed") %} — {{ f.get("what_changed")[:120] }}{% endif %}
+            </div>
+            {% endfor %}
+            {% if not findings %}
+            <div class="sig-item" style="color:#8a92a0;font-style:italic;">No findings generated for this run.</div>
+            {% endif %}
+        </div>
+
+        {% if executive_summary %}
+        <div style="margin-top:18px; background:#eff6ff; border-left:4px solid {{ brand_color }}; padding:14px 16px; border-radius:0 6px 6px 0;">
+            <div style="font-size:11pt; font-weight:700; color:{{ brand_color }}; margin-bottom:4px;">Executive Summary</div>
+            <p style="font-size:9.5pt; color:#334155; margin:0;">{{ executive_summary }}</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="pfoot">
+        <span class="pfoot-brand">Frontier AI Radar · Confidential</span>
+    </div>
+</div>
 
 <!-- ══════════════════════════════════════════════════════════
      DEEP-DIVE SECTIONS (by agent domain)
-     Only sections WITH findings are rendered — no empty pages.
-     No forced page breaks — content fills naturally.
+     Only sections WITH findings are rendered.
      ══════════════════════════════════════════════════════════ -->
 
-{% set section_map = {
-    "research_intel":        {"label": "Research Publications",                          "badge": "badge-research",   "badge_text": "Research"},
-    "model_intel":           {"label": "Foundational Models",                           "badge": "badge-model",      "badge_text": "Model"},
-    "competitor_intel":      {"label": "Competitor Releases",                            "badge": "badge-competitor", "badge_text": "Competitor"},
-    "benchmark_intel":       {"label": "HF Benchmarks, Leaderboards & Trending Models", "badge": "badge-benchmark",  "badge_text": "Benchmark"}
-} %}
+{% set section_config = [
+    {
+        "key": "competitor_intel",
+        "section_key": "competitors",
+        "label": "Competitor Landscape",
+        "sub": "Product launches · Platform updates · Pricing shifts · Strategic moves",
+        "icon": "🏢",
+        "icon_bg": "#4361ee",
+        "bg": "#f0f4ff",
+        "text_color": "#4361ee",
+        "tag_bg": "#e2e9ff",
+        "tag_text": "#2d47c9",
+        "count_label": "updates",
+        "logo_letter": "C"
+    },
+    {
+        "key": "model_intel",
+        "section_key": "models",
+        "label": "Foundation Model Releases",
+        "sub": "Model launches · API updates · Pricing changes · Eval claims",
+        "icon": "🧠",
+        "icon_bg": "#0dab76",
+        "bg": "#edfcf4",
+        "text_color": "#0dab76",
+        "tag_bg": "#d4f7e7",
+        "tag_text": "#0a8a5e",
+        "count_label": "releases",
+        "logo_letter": "M"
+    },
+    {
+        "key": "research_intel",
+        "section_key": "research",
+        "label": "Research Papers",
+        "sub": "LLMs · Multimodal · Agents · Evaluation · Alignment · Safety",
+        "icon": "📄",
+        "icon_bg": "#7c4dff",
+        "bg": "#f5f0ff",
+        "text_color": "#7c4dff",
+        "tag_bg": "#ede3ff",
+        "tag_text": "#6235d4",
+        "count_label": "papers",
+        "logo_letter": "R"
+    },
+    {
+        "key": "benchmark_intel",
+        "section_key": "benchmarks",
+        "label": "Hugging Face & Benchmarks",
+        "sub": "Open LLM Leaderboard · SOTA claims · Dataset & task-specific trends",
+        "icon": "🤗",
+        "icon_bg": "#ff8c42",
+        "bg": "#fff8f0",
+        "text_color": "#ff8c42",
+        "tag_bg": "#ffe8d0",
+        "tag_text": "#d96b1a",
+        "count_label": "signals",
+        "logo_letter": "H"
+    }
+] %}
 
-{% set section_keys_map = {"research_intel": "research", "competitor_intel": "competitors", "model_intel": "models", "benchmark_intel": "benchmarks"} %}
+{% for sec in section_config %}
+{% set agent_findings = grouped_findings.get(sec.key, []) %}
+{% set section_narrative = sections.get(sec.section_key, "") %}
 
-{% for agent_key, meta in section_map.items() %}
-{% set agent_findings = grouped_findings.get(agent_key, []) %}
-{% set section_narrative = sections.get(section_keys_map.get(agent_key, ""), "") %}
-
-{# Only render section if it has findings OR a narrative #}
 {% if agent_findings or section_narrative %}
-<div class="section-divider"></div>
-<h2>{{ meta.label }}</h2>
+<div class="section-page">
+    <div class="run-header">
+        <span class="run-header-brand">Frontier AI Radar</span>
+        <span class="run-header-issue">{{ sec.label }}</span>
+    </div>
 
-{# Render the narrative from the Digest Agent if available #}
-{% if section_narrative %}
-<div class="callout callout-info">
-    <p>{{ section_narrative }}</p>
-</div>
-{% endif %}
+    <!-- Section band -->
+    <div style="background:{{ sec.bg }}; padding:18px 42px 14px; border-bottom:1px solid #edf0f4;">
+        <span class="sec-icon" style="background:{{ sec.icon_bg }}">{{ sec.icon }}</span>
+        <span class="sec-title" style="color:{{ sec.text_color }}; vertical-align:middle;">{{ sec.label }}</span>
+        <span class="sec-count-pill" style="background:{{ sec.tag_bg }}; color:{{ sec.tag_text }};">{{ agent_findings|length }} {{ sec.count_label }} today</span>
+        <div class="sec-sub">{{ sec.sub }}</div>
+    </div>
 
-{# Render individual finding cards #}
-{% if agent_findings %}
-    {% for f in agent_findings %}
-    <div class="finding-card">
-        <span class="domain-badge {{ meta.badge }}">{{ meta.badge_text }}</span>
-
-        {% set conf = f.get("confidence", "MEDIUM") %}
-        {% if conf == "HIGH" %}
-        <span class="confidence-badge confidence-high">HIGH</span>
-        {% elif conf == "LOW" %}
-        <span class="confidence-badge confidence-low">LOW</span>
-        {% else %}
-        <span class="confidence-badge confidence-medium">MEDIUM</span>
-        {% endif %}
-
-        <div class="title">{{ f.get("title", "Untitled Finding") }}</div>
-
-        {% if f.get("what_changed") %}
-        <div class="what-changed"><strong>What changed:</strong> {{ f.get("what_changed") }}</div>
-        {% endif %}
-
-        {% if f.get("why_it_matters") %}
-        <div class="why-matters"><strong>Why it matters:</strong> {{ f.get("why_it_matters") }}</div>
-        {% endif %}
-
-        {# Impact score bar #}
-        {% set score = f.get("impact_score", 0.0)|float %}
-        <div class="meta-row">
-            Impact Score: <span class="score-text">{{ "%.2f"|format(score) }}</span>
-            (R={{ "%.2f"|format(f.get("relevance", 0.0)|float) }}
-             N={{ "%.2f"|format(f.get("novelty", 0.0)|float) }}
-             C={{ "%.2f"|format(f.get("credibility", 0.0)|float) }}
-             A={{ "%.2f"|format(f.get("actionability", 0.0)|float) }})
-        </div>
-        <div class="score-bar">
-            <div class="score-fill" style="width: {{ (score * 100)|int }}%"></div>
-        </div>
-
-        {# Entities #}
-        {% if f.get("entities") %}
-        <div style="margin: 6px 0;">
-            {% for entity in f.get("entities", []) %}
-            <span class="entity-tag">{{ entity }}</span>
-            {% endfor %}
-        </div>
-        {% endif %}
-
-        {# Evidence snippet #}
-        {% if f.get("evidence_snippet") %}
-        <div class="evidence-box">"{{ f.get("evidence_snippet") }}"</div>
-        {% endif %}
-
-        {# Source URL #}
-        {% if f.get("source_url") %}
-        <div class="source-link">Source: <a href="{{ f.get('source_url') }}">{{ f.get("source_url") }}</a></div>
-        {% endif %}
-
-        {# Publisher + date #}
-        <div class="meta-row">
-            {% if f.get("publisher") %}Publisher: {{ f.get("publisher") }} | {% endif %}
-            {% if f.get("date_detected") %}Detected: {{ f.get("date_detected") }} | {% endif %}
-            {% if f.get("category") %}Category: {{ f.get("category") }}{% endif %}
+    {% if section_narrative %}
+    <div style="padding:12px 42px 4px;">
+        <div style="background:#f5f8ff; border-left:3px solid {{ sec.text_color }}; padding:10px 14px; border-radius:0 6px 6px 0; font-size:9.5pt; color:#4b5563;">
+            {{ section_narrative }}
         </div>
     </div>
-    {% endfor %}
-{% endif %}
+    {% endif %}
 
+    <div class="cards-area">
+    {% for f in agent_findings %}
+        <div class="card">
+            <!-- Card header -->
+            <table class="ch-table">
+                <tr>
+                    <td style="width:42px; padding-right:4px;">
+                        <span class="ch-logo" style="background:{{ sec.icon_bg }}">{{ f.get("title", "U")[0]|upper }}</span>
+                    </td>
+                    <td>
+                        <div class="ch-title">{{ f.get("title", "Untitled Finding") }}</div>
+                        <div class="ch-sub">
+                            {% if f.get("publisher") %}{{ f.get("publisher") }} · {% endif %}
+                            {% if f.get("category") %}{{ f.get("category") }}{% endif %}
+                        </div>
+                    </td>
+                    <td style="width:130px; text-align:right;">
+                        {% set conf = f.get("confidence", "MEDIUM") %}
+                        {% if conf == "HIGH" %}
+                        <span class="impact impact-high"><span class="impact-dot"></span>Impact: High</span>
+                        {% elif conf == "LOW" %}
+                        <span class="impact impact-low"><span class="impact-dot"></span>Impact: Low</span>
+                        {% else %}
+                        <span class="impact impact-med"><span class="impact-dot"></span>Impact: Medium</span>
+                        {% endif %}
+                        <br>
+                        <span class="cat-tag" style="background:{{ sec.tag_bg }}; color:{{ sec.tag_text }};">
+                            {% if f.get("category") %}{{ f.get("category") }}{% else %}{{ sec.count_label|capitalize }}{% endif %}
+                        </span>
+                    </td>
+                </tr>
+            </table>
+
+            <!-- Card body -->
+            <div class="cb">
+                {% if f.get("what_changed") %}{{ f.get("what_changed") }}{% endif %}
+                {% if f.get("why_it_matters") %}
+                <br><em style="color:#6b7280;">Why it matters: {{ f.get("why_it_matters") }}</em>
+                {% endif %}
+
+                {# Score bar #}
+                {% set score = f.get("impact_score", 0.0)|float %}
+                <div class="score-bar-wrap">
+                    <span class="score-text">Score: {{ "%.2f"|format(score) }}</span>
+                    <span style="font-size:7pt; color:#8a92a0;">
+                        (R={{ "%.2f"|format(f.get("relevance", 0.0)|float) }}
+                         N={{ "%.2f"|format(f.get("novelty", 0.0)|float) }}
+                         C={{ "%.2f"|format(f.get("credibility", 0.0)|float) }}
+                         A={{ "%.2f"|format(f.get("actionability", 0.0)|float) }})
+                    </span>
+                    <div class="score-bar">
+                        <div class="score-fill" style="width:{{ (score * 100)|int }}%; background:{{ sec.text_color }};"></div>
+                    </div>
+                </div>
+
+                {# Tags / entities #}
+                {% if f.get("entities") %}
+                <div class="tags">
+                    {% for entity in f.get("entities", []) %}
+                    <span class="tag" style="background:{{ sec.tag_bg }}; color:{{ sec.tag_text }};">{{ entity }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {# Evidence snippet #}
+                {% if f.get("evidence_snippet") %}
+                <div class="evidence-box">"{{ f.get("evidence_snippet") }}"</div>
+                {% endif %}
+            </div>
+
+            <!-- Card footer -->
+            <div class="cf">
+                <span class="cf-date">
+                    {% if f.get("date_detected") %}{{ f.get("date_detected") }}{% else %}{{ generation_date }}{% endif %}
+                </span>
+                {% if f.get("source_url") %}
+                <a class="cf-link" href="{{ f.get('source_url') }}">{{ f.get("source_url", "")[:50] }} →</a>
+                {% endif %}
+            </div>
+        </div>
+    {% endfor %}
+    </div>
+
+    <div class="pfoot">
+        <span class="pfoot-brand">Frontier AI Radar · Confidential</span>
+    </div>
+</div>
 {% endif %}
 {% endfor %}
 
-<!-- ══════════════════════════════════════════════════════════
-     APPENDIX: Source Links & Evidence Snippets
-     ══════════════════════════════════════════════════════════ -->
+<!-- ══════════════════════════
+     FINDINGS AT A GLANCE (data table)
+══════════════════════════ -->
 {% if findings %}
-<div class="section-divider"></div>
-<h2>Appendix: Sources & Evidence</h2>
-<table>
-    <thead>
-        <tr>
-            <th>#</th>
-            <th>Title</th>
-            <th>Source URL</th>
-            <th>Evidence Snippet</th>
-        </tr>
-    </thead>
-    <tbody>
-    {% for f in findings %}
-        <tr>
-            <td>{{ loop.index }}</td>
-            <td>{{ f.get("title", "Untitled")[:60] }}</td>
-            <td><a href="{{ f.get('source_url', '#') }}">{{ f.get("source_url", "N/A")[:50] }}</a></td>
-            <td>{{ f.get("evidence_snippet", "N/A")[:100] }}</td>
-        </tr>
-    {% endfor %}
-    </tbody>
-</table>
+<div class="section-page">
+    <div class="run-header">
+        <span class="run-header-brand">Frontier AI Radar</span>
+        <span class="run-header-issue">Findings Overview</span>
+    </div>
+
+    <div style="padding:30px 42px;">
+        <div class="page-eyebrow">Quick Reference</div>
+        <div class="page-title">Top Findings at a Glance</div>
+
+        <table class="data-table">
+            <thead>
+                <tr style="background:#f0f4ff;">
+                    <th style="color:#4361ee; border-bottom-color:#b8c9ff;">#</th>
+                    <th style="color:#4361ee; border-bottom-color:#b8c9ff;">Title</th>
+                    <th style="color:#4361ee; border-bottom-color:#b8c9ff;">Domain</th>
+                    <th style="color:#4361ee; border-bottom-color:#b8c9ff;">Impact</th>
+                    <th style="color:#4361ee; border-bottom-color:#b8c9ff;">Score</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for f in findings[:15] %}
+                <tr>
+                    <td style="font-family:'Courier New',monospace; font-weight:800; color:#4361ee;">{{ "%02d"|format(loop.index) }}</td>
+                    <td style="font-weight:700; color:#1a1d23;">{{ f.get("title", "Untitled")[:65] }}</td>
+                    <td>
+                        {% set src = f.get("agent_source", "") %}
+                        {% if "competitor" in src %}
+                        <span class="cat-tag" style="background:#e2e9ff;color:#2d47c9;">Competitor</span>
+                        {% elif "model" in src %}
+                        <span class="cat-tag" style="background:#d4f7e7;color:#0a8a5e;">Model</span>
+                        {% elif "research" in src %}
+                        <span class="cat-tag" style="background:#ede3ff;color:#6235d4;">Research</span>
+                        {% elif "benchmark" in src %}
+                        <span class="cat-tag" style="background:#ffe8d0;color:#d96b1a;">Benchmark</span>
+                        {% else %}
+                        <span class="cat-tag" style="background:#f1f5f9;color:#475569;">Intel</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% set conf = f.get("confidence", "MEDIUM") %}
+                        {% if conf == "HIGH" %}
+                        <span class="impact impact-high"><span class="impact-dot"></span>High</span>
+                        {% elif conf == "LOW" %}
+                        <span class="impact impact-low"><span class="impact-dot"></span>Low</span>
+                        {% else %}
+                        <span class="impact impact-med"><span class="impact-dot"></span>Medium</span>
+                        {% endif %}
+                    </td>
+                    <td><span class="score-text">{{ "%.2f"|format(f.get("impact_score", 0.0)|float) }}</span></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="pfoot">
+        <span class="pfoot-brand">Frontier AI Radar · Confidential</span>
+    </div>
+</div>
 {% endif %}
 
-<!-- ── Footer ─────────────────────────────────────────────── -->
-<div class="footer">
-    <p>Powered by <strong>{{ brand_name }}</strong> | Multi-Agent AI Intelligence Platform</p>
-    <p>{{ generation_date }} | Run: {{ run_id }} | Impact = 0.35*Relevance + 0.25*Novelty + 0.20*Credibility + 0.20*Actionability</p>
+<!-- ══════════════════════════
+     APPENDIX PAGE
+══════════════════════════ -->
+<div class="section-page">
+    <div class="run-header">
+        <span class="run-header-brand">Frontier AI Radar</span>
+        <span class="run-header-issue">Appendix &amp; Sources</span>
+    </div>
+
+    <div class="appendix">
+        <div class="page-eyebrow" style="margin-bottom:14px">Appendix</div>
+
+        <h3>Data Sources &amp; Collection Methodology</h3>
+        <p>This digest is compiled via automated multi-agent monitoring of official company blogs (OpenAI, Google DeepMind, Anthropic, Meta AI, Mistral, Cohere, xAI), arXiv RSS feeds filtered by CS.AI / CS.LG / CS.CL categories, the Hugging Face Open LLM Leaderboard v2 API, Semantic Scholar, GitHub trending, HackerNews, and Reddit. Content is ranked by novelty, potential production impact, and strategic relevance using a deterministic impact formula.</p>
+
+        <h3>Impact Level Classification</h3>
+        <p>
+            <span style="color:#e53935; font-weight:700;">🔴 High</span> — Significant market or technical event requiring near-term response: pricing shift, SOTA displacement, major product launch or open-weight release.
+            <span style="color:#f59e0b; font-weight:700;">🟡 Medium</span> — Noteworthy development to monitor over the coming week.
+            <span style="color:#22c55e; font-weight:700;">🟢 Low</span> — Background signal relevant for long-term trend tracking.
+        </p>
+
+        <h3>Impact Scoring Formula</h3>
+        <p>Impact = 0.35 × Relevance + 0.25 × Novelty + 0.20 × Credibility + 0.20 × Actionability. Each dimension is scored 0–1 by the ranking agent based on content analysis.</p>
+
+        <h3>Disclaimer</h3>
+        <p>This report is generated for internal strategic awareness by the {{ brand_name }} multi-agent intelligence platform. Information is sourced exclusively from public channels and does not constitute financial or investment advice. Distribution is restricted to authorized recipients only.</p>
+
+        <table class="appendix-footer-table">
+            <tr>
+                <td><strong>Generated</strong>{{ generation_date }}</td>
+                <td><strong>Run ID</strong>{{ run_id }}</td>
+                <td><strong>Total Signals</strong>{{ total_findings }} items tracked</td>
+                <td><strong>Publisher</strong>{{ brand_name }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="pfoot">
+        <span class="pfoot-brand">Frontier AI Radar · Confidential</span>
+    </div>
 </div>
 
-</div>
 </body>
 </html>

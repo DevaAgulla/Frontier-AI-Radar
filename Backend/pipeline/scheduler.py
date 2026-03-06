@@ -24,17 +24,32 @@ async def _daily_full_run() -> None:
 
     logger.info("Scheduler: daily full run triggered")
 
-    # Fetch all subscribed users
+    # Fetch all subscribed / registered users from DB
     init_db()  # no-op if already initialised
     with get_session() as session:
         users = session.query(User).all()
-        email_recipients = [u.email for u in users]
+        db_emails = [u.email.strip().lower() for u in users if u.email]
+
+    # Also include .env EMAIL_RECIPIENTS
+    env_emails = [
+        e.strip().lower()
+        for e in settings.email_recipients.split(",")
+        if e.strip()
+    ]
+
+    # Merge & deduplicate
+    seen: set = set()
+    email_recipients: list = []
+    for email in db_emails + env_emails:
+        if email and email not in seen:
+            seen.add(email)
+            email_recipients.append(email)
 
     if not email_recipients:
         logger.warning("Scheduler: no subscribed users — skipping run")
         return
 
-    logger.info("Scheduler: sending to %d subscribers", len(email_recipients))
+    logger.info("Scheduler: sending to %d recipients", len(email_recipients), emails=email_recipients)
 
     try:
         state = await run_radar(

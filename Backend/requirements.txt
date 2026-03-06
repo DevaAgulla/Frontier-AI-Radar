@@ -58,6 +58,9 @@ uvicorn[standard]>=0.27.0
 # that are unavailable on free cloud platforms. We use xhtml2pdf for PDF
 # generation and Next.js for the frontend instead.
 
+# Authentication (JWT tokens)
+PyJWT>=2.8.0
+
 # Scheduler
 apscheduler>=3.10.0
 

@@ -1530,7 +1530,8 @@ async def send_email_mcp(
     to: List[str], subject: str, body: str, pdf_path: str
 ) -> Dict[str, Any]:
     """
-    Send email with PDF attachment via Resend HTTP API or SMTP fallback.
+    Send email with PDF attachment.
+    Priority: Brevo HTTP API → Resend HTTP API → SMTP fallback.
     USE THIS FOR: All email delivery in the notification agent.
     DO NOT USE FOR: Direct API calls to external services.
     RETURNS: {
@@ -1548,7 +1549,16 @@ async def send_email_mcp(
     from email.mime.application import MIMEApplication
     from pathlib import Path
 
+    brevo_api_key = os.environ.get("BREVO_API_KEY", "") or (settings.brevo_api_key or "")
     resend_api_key = os.environ.get("RESEND_API_KEY", "")
+
+    # Determine which provider to use (priority order)
+    if brevo_api_key:
+        provider = "Brevo"
+    elif resend_api_key:
+        provider = "Resend"
+    else:
+        provider = "SMTP"
 
     try:
         # ── LOG: Entry ──────────────────────────────────────────────
@@ -1557,34 +1567,100 @@ async def send_email_mcp(
         print(f"[EMAIL] To: {to}")
         print(f"[EMAIL] Subject: {subject}")
         print(f"[EMAIL] PDF path: {pdf_path}")
-        print(f"[EMAIL] Method: {'Resend HTTP API' if resend_api_key else 'SMTP'}")
+        print(f"[EMAIL] Provider: {provider}")
         print(f"[EMAIL] From: {settings.email_from}")
         print(f"{'='*60}")
 
-        # ── RESEND HTTP API (for cloud platforms that block SMTP) ──
-        if resend_api_key:
+        # ── Helper: read PDF for attachment ────────────────────────
+        pdf_file = Path(pdf_path)
+        pdf_b64 = None
+        pdf_filename = "report.pdf"
+        if pdf_file.exists():
+            pdf_size = pdf_file.stat().st_size
+            pdf_b64 = base64.b64encode(pdf_file.read_bytes()).decode("utf-8")
+            pdf_filename = pdf_file.name
+            print(f"[EMAIL] PDF attached: {pdf_filename} ({pdf_size} bytes)")
+        else:
+            print(f"[EMAIL] WARNING: PDF file NOT found at {pdf_path}")
+
+        # ════════════════════════════════════════════════════════════
+        # 1. BREVO HTTP API (primary — 300 free emails/day, any recipient)
+        # ════════════════════════════════════════════════════════════
+        if provider == "Brevo":
+            print("[EMAIL] Using Brevo HTTP API (port 443 — never blocked)")
+
+            # Parse sender: support "Name <email>" or plain email
+            from_email = settings.email_from
+            from_name = "Frontier AI Radar"
+            if "<" in from_email and ">" in from_email:
+                parts = from_email.split("<")
+                from_name = parts[0].strip()
+                from_email = parts[1].replace(">", "").strip()
+
+            brevo_payload: Dict[str, Any] = {
+                "sender": {
+                    "name": from_name,
+                    "email": from_email,
+                },
+                "to": [{"email": addr.strip()} for addr in to],
+                "subject": subject,
+                "htmlContent": body,
+            }
+
+            # Attach PDF if available
+            if pdf_b64:
+                brevo_payload["attachment"] = [{
+                    "content": pdf_b64,
+                    "name": pdf_filename,
+                }]
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    "https://api.brevo.com/v3/smtp/email",
+                    headers={
+                        "api-key": brevo_api_key,
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                    json=brevo_payload,
+                    timeout=30.0,
+                )
+
+            if resp.status_code in (200, 201):
+                resp_data = resp.json()
+                message_id = resp_data.get("messageId", "brevo-ok")
+                print(f"\n[EMAIL] *** EMAIL SENT SUCCESSFULLY via Brevo ***")
+                print(f"[EMAIL] Message-ID: {message_id}")
+                print(f"[EMAIL] Recipients: {to}")
+                print(f"[EMAIL] Subject: {subject}")
+                print(f"{'='*60}\n")
+                return {"status": "sent", "message_id": str(message_id), "error": None}
+            else:
+                error_msg = f"Brevo API error {resp.status_code}: {resp.text}"
+                print(f"\n[EMAIL] *** BREVO SEND FAILED ***")
+                print(f"[EMAIL] Error: {error_msg}")
+                print(f"{'='*60}\n")
+                return {"status": "failed", "message_id": "", "error": error_msg}
+
+        # ════════════════════════════════════════════════════════════
+        # 2. RESEND HTTP API (fallback — kept for backward compat)
+        # ════════════════════════════════════════════════════════════
+        if provider == "Resend":
             print("[EMAIL] Using Resend HTTP API (port 443 — never blocked)")
             from_addr = settings.email_from or "Frontier AI Radar <onboarding@resend.dev>"
 
-            payload: Dict[str, Any] = {
+            resend_payload: Dict[str, Any] = {
                 "from": from_addr,
                 "to": to,
                 "subject": subject,
                 "html": body,
             }
 
-            # Attach PDF if it exists
-            pdf_file = Path(pdf_path)
-            if pdf_file.exists():
-                pdf_size = pdf_file.stat().st_size
-                pdf_data = pdf_file.read_bytes()
-                payload["attachments"] = [{
-                    "filename": pdf_file.name,
-                    "content": base64.b64encode(pdf_data).decode("utf-8"),
+            if pdf_b64:
+                resend_payload["attachments"] = [{
+                    "filename": pdf_filename,
+                    "content": pdf_b64,
                 }]
-                print(f"[EMAIL] PDF attached: {pdf_file.name} ({pdf_size} bytes)")
-            else:
-                print(f"[EMAIL] WARNING: PDF file NOT found at {pdf_path}")
 
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
@@ -1593,7 +1669,7 @@ async def send_email_mcp(
                         "Authorization": f"Bearer {resend_api_key}",
                         "Content-Type": "application/json",
                     },
-                    json=payload,
+                    json=resend_payload,
                     timeout=30.0,
                 )
 
@@ -1613,30 +1689,25 @@ async def send_email_mcp(
                 print(f"{'='*60}\n")
                 return {"status": "failed", "message_id": "", "error": error_msg}
 
-        # ── SMTP FALLBACK (for local development) ──────────────────
+        # ════════════════════════════════════════════════════════════
+        # 3. SMTP FALLBACK (for local development only)
+        # ════════════════════════════════════════════════════════════
         print(f"[EMAIL] Using SMTP fallback ({settings.smtp_host}:{settings.smtp_port})")
 
-        # Build email
         msg = MIMEMultipart()
         msg["From"] = settings.email_from
         msg["To"] = ", ".join(to)
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "html"))
 
-        # Attach PDF if it exists
-        pdf_file = Path(pdf_path)
         if pdf_file.exists():
-            pdf_size = pdf_file.stat().st_size
             with open(pdf_file, "rb") as f:
                 attachment = MIMEApplication(f.read(), _subtype="pdf")
                 attachment.add_header(
                     "Content-Disposition", "attachment",
-                    filename=pdf_file.name,
+                    filename=pdf_filename,
                 )
                 msg.attach(attachment)
-            print(f"[EMAIL] PDF attached: {pdf_file.name} ({pdf_size} bytes)")
-        else:
-            print(f"[EMAIL] WARNING: PDF file NOT found at {pdf_path}")
 
         smtp_port = settings.smtp_port
         print(f"[EMAIL] Connecting to SMTP {settings.smtp_host}:{smtp_port}...")
@@ -1674,6 +1745,7 @@ async def send_email_mcp(
         print(f"\n[EMAIL] *** EMAIL SEND FAILED ***")
         print(f"[EMAIL] Error: {type(e).__name__}: {e}")
         print(f"[EMAIL] Recipients: {to}")
+        print(f"[EMAIL] Provider: {provider}")
         print(f"{'='*60}\n")
 
         return {

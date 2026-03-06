@@ -45,6 +45,19 @@ def _enable_sqlite_fk(dbapi_conn, connection_record):
     cursor.close()
 
 
+def _migrate_add_column(engine, table: str, column: str, col_type: str) -> None:
+    """Add a column to an existing table if it doesn't exist (SQLite)."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        # Check if column already exists
+        result = conn.execute(text(f"PRAGMA table_info({table})"))
+        existing_cols = {row[1] for row in result}
+        if column not in existing_cols:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+            conn.commit()
+            logger.info(f"Migration: added column {column} to {table}")
+
+
 def init_db() -> None:
     """
     Initialise the SQLite database.
@@ -75,6 +88,9 @@ def init_db() -> None:
     Base.metadata.create_all(_engine)
 
     _SessionFactory = sessionmaker(bind=_engine)
+
+    # Lightweight migration: add password_hash column to users table if missing
+    _migrate_add_column(_engine, "users", "password_hash", "VARCHAR(256)")
 
     # Seed default competitor sources (idempotent — skips if table already has rows)
     from db.persist import seed_default_competitors

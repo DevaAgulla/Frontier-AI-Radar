@@ -49,7 +49,6 @@ export default function AgentPipelineDragDrop({ selectedIds, onChange }: AgentPi
       if (!id || !agentMap.has(id)) return;
       const fromPipeline = e.dataTransfer.getData("application/from-pipeline") === "true";
       if (fromPipeline) {
-        // already in pipeline — ignore reorder since parallel has no order
         return;
       } else {
         if (selectedIds.includes(id)) return;
@@ -71,13 +70,25 @@ export default function AgentPipelineDragDrop({ selectedIds, onChange }: AgentPi
     [selectedIds, onChange]
   );
 
+  /* Click-to-add: toggle agent in/out of pipeline */
+  const handleAgentClick = useCallback(
+    (agentId: AgentId) => {
+      if (selectedIds.includes(agentId)) {
+        onChange(selectedIds.filter((id) => id !== agentId));
+      } else {
+        onChange([...selectedIds, agentId]);
+      }
+    },
+    [selectedIds, onChange]
+  );
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6 w-full">
-      {/* Left: Available report agents (draggable) */}
+      {/* Left: Available report agents (draggable + clickable) */}
       <div className="rounded-xl border-2 border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-sm">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Report agents</h3>
-        <p className="text-xs text-[var(--text-muted)] mb-3">
-          Drag agents into the pipeline. All selected agents run <strong>in parallel</strong>.
+        <h3 className="text-sm font-bold text-[var(--text-primary)] mb-1">Report agents</h3>
+        <p className="text-xs font-medium text-[var(--text-muted)] mb-3">
+          Click or drag agents into the pipeline. All selected agents run <strong>in parallel</strong>.
         </p>
         <ul className="space-y-2">
           {AGENTS.map((agent) => {
@@ -87,20 +98,26 @@ export default function AgentPipelineDragDrop({ selectedIds, onChange }: AgentPi
                 key={agent.id}
                 draggable
                 onDragStart={(e) => handleDragStart(e, agent.id, false)}
-                className={`rounded-lg border-2 px-3 py-2.5 flex items-center gap-3 cursor-grab active:cursor-grabbing transition-all ${
+                onClick={() => handleAgentClick(agent.id)}
+                className={`rounded-lg border-2 px-3 py-2.5 flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-all select-none ${
                   inPipeline
-                    ? "border-[var(--primary)] bg-[var(--primary-light)] opacity-90"
+                    ? "border-[var(--primary)] bg-[var(--primary-light)] opacity-90 ring-2 ring-[var(--primary)]/20"
                     : "border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--border-purple)] hover:shadow-md"
                 }`}
-                title={`${agent.label}: ${agent.description}. Drag to pipeline to add.`}
+                title={`${agent.label}: ${agent.description}. Click or drag to ${inPipeline ? "remove from" : "add to"} pipeline.`}
               >
                 <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--primary-light)] shrink-0 [&_svg]:w-4 [&_svg]:h-4 text-[var(--primary)]">
                   {agent.placeholderIcon}
                 </span>
-                <div className="min-w-0">
-                  <span className="text-sm font-medium text-[var(--text-primary)] block truncate">{agent.shortLabel}</span>
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-semibold text-[var(--text-primary)] block truncate">{agent.shortLabel}</span>
                   <span className="text-xs text-[var(--text-muted)] truncate block">{agent.description}</span>
                 </div>
+                {inPipeline && (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                )}
               </li>
             );
           })}
@@ -109,8 +126,8 @@ export default function AgentPipelineDragDrop({ selectedIds, onChange }: AgentPi
 
       {/* Right: Pipeline (drop zone) — parallel execution layout */}
       <div className="rounded-xl border-2 border-dashed border-[var(--border)] bg-[var(--bg)] min-h-[200px] p-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Your pipeline</h3>
-        <p className="text-xs text-[var(--text-muted)] mb-4">
+        <h3 className="text-sm font-bold text-[var(--text-primary)] mb-1">Your pipeline</h3>
+        <p className="text-xs font-medium text-[var(--text-muted)] mb-4">
           Drop agents here. All agents execute <strong>in parallel</strong>.
         </p>
         <div
@@ -127,8 +144,8 @@ export default function AgentPipelineDragDrop({ selectedIds, onChange }: AgentPi
               <svg className="w-10 h-10 mb-2 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <path d="M12 5v14M5 12h14" strokeLinecap="round" />
               </svg>
-              <span className="text-sm">Drop agents here</span>
-              <span className="text-xs mt-0.5">All agents run in parallel</span>
+              <span className="text-sm font-semibold">Drop agents here or click to add</span>
+              <span className="text-xs font-medium mt-0.5">All agents run in parallel</span>
             </div>
           ) : (
             <div className="flex items-center justify-center gap-4">

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "./context/AuthContext";
 import LayoutWithSidebar from "./components/LayoutWithSidebar";
 
 const inter = Inter({
@@ -21,7 +22,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="overflow-x-hidden">
       <body className={`${inter.variable} antialiased overflow-x-hidden`}>
-        <LayoutWithSidebar>{children}</LayoutWithSidebar>
+        <AuthProvider>
+          <LayoutWithSidebar>{children}</LayoutWithSidebar>
+        </AuthProvider>
       </body>
     </html>
   );
