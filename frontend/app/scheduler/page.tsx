@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import BackButton from "../components/BackButton";
 import { api } from "@/lib/api";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/AuthContext";
 import type { SchedulerSubscriber } from "@/lib/types";
 
 function isDummyEmail(email: string): boolean {
@@ -22,7 +23,8 @@ function isDummyEmail(email: string): boolean {
 
 export default function SchedulerPage() {
   const { pushToast } = useToast();
-  const [email, setEmail] = useState("");
+  const { user } = useAuth();
+  const [email, setEmail] = useState(user?.email ?? "");
   const [scheduled, setScheduled] = useState<{ message: string; time: string } | null>(null);
   const [subscribers, setSubscribers] = useState<SchedulerSubscriber[]>([]);
   const [loadingSubscribers, setLoadingSubscribers] = useState(false);

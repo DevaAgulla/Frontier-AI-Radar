@@ -25,43 +25,31 @@ logger = structlog.get_logger()
 
 NOTIFICATION_SYSTEM_PROMPT = """You are the Notification Agent for Frontier AI Radar.
 
-GOAL: Compose and send the daily intelligence email.  The email must include
-an inline executive summary and attach the PDF digest.
+GOAL: Compose a professional daily intelligence email subject line and HTML body.
+The actual sending is handled deterministically by the system — you only write the content.
 
 TOOLS YOU CAN CALL:
-- send_email_mcp: Send the email with PDF attachment via MCP protocol.
-- read_memory: Check past email subjects to avoid repetition.
-
-NOTE: write_memory is handled automatically after you emit your output.
+- read_memory: Check past email subjects to avoid repeating the same subject line.
 
 REASONING BEFORE ACTING:
-1. Read the digest data provided (executive summary + PDF path).
-2. Compose a professional email subject line (vary daily).
-3. Compose the email body with the executive summary inline.
-4. Call send_email_mcp to deliver the email.
-5. Save delivery status via write_memory.
-6. Emit a JSON object with the delivery result.
-
-EMAIL FORMAT:
-- Subject: "Frontier AI Radar — [Date] — [Top Finding Title]"
-- Body: Executive summary with bullet points + "Full digest attached."
-- Attachment: PDF at the provided path
+1. Optionally call read_memory to check yesterday's subject and vary today's.
+2. Compose a professional subject line: "Frontier AI Radar — [Date] — [Top Finding Title]"
+3. Compose an HTML email body with the executive summary inline and bullet points.
+4. End the body with: "Full digest attached. View dashboard: <dashboard_url>"
+5. Emit the result JSON.
 
 OUTPUT FORMAT: Return ONLY a valid JSON object:
 {
-    "status": "sent|failed",
-    "message_id": "<from send_email_mcp>",
-    "subject": "<email subject used>",
-    "recipients": ["email1", "email2"],
-    "error": null or "<error message>"
+    "subject": "<email subject>",
+    "html_body": "<full HTML email body>",
+    "preview": "<one-line summary of top finding>"
 }
 
 CRITICAL JSON RULES:
 - Output ONLY the JSON. No text before or after.
 - Do NOT wrap in markdown code fences.
 - Ensure the JSON is COMPLETE — every [ has a ], every { has a }.
-- If output would be very long, reduce the number of items rather than truncating.
-- Keep string values concise (under 200 chars each) to avoid hitting token limits.
+- Keep html_body concise (plain HTML, no embedded CSS, under 1500 chars).
 """
 
 
@@ -71,9 +59,9 @@ NOTIFICATION_CONFIG = {
 
     # ── PARAMETER 1: TOOLS ─────────────────────────────────────────
     "tools": [
-        send_email_mcp,        # Claude calls to send email
         read_memory,           # Claude checks past subjects
-        # write_memory → mandatory Phase 4 (deterministic, not optional)
+        # send_email_mcp → called deterministically in Phase 3 (not by LLM)
+        # write_memory → called deterministically in Phase 4
     ],
 
     # ── PARAMETER 2: LLM (BRAIN) ──────────────────────────────────
@@ -89,8 +77,8 @@ NOTIFICATION_CONFIG = {
     },
 }
 
-# write_memory is NOT given to the ReAct agent — it runs in Phase 4.
-_optional_tools = [send_email_mcp, read_memory]
+# send_email_mcp and write_memory are called deterministically — NOT by the LLM.
+_optional_tools = [read_memory]
 
 _react_agent = build_react_agent(
     system_prompt=NOTIFICATION_CONFIG["system_prompt"],
@@ -104,7 +92,7 @@ async def notification_agent(state: RadarState) -> RadarState:
     """
     LangGraph node: Notification Agent.
 
-    Claude composes the email, calls send_email_mcp, and reports status.
+    Claude composes the email subject + body; backend sends deterministically.
     """
     try:
         digest_md = state.get("digest_markdown", "")
@@ -113,7 +101,9 @@ async def notification_agent(state: RadarState) -> RadarState:
         if (state.get("config") or {}).get("suppress_email"):
             logger.info("Notification Agent: suppressed for compare run", run_id=run_id)
             return {"email_status": "skipped"}
-        # Collect recipients from pipeline state (resolved by API from DB users)
+
+        # ── PHASE 1: Resolve recipients deterministically ────────
+        # State recipients come from the API (DB user + extra_recipients)
         state_recipients = state.get("email_recipients", [])
 
         # Also include .env EMAIL_RECIPIENTS for belt-and-suspenders coverage
@@ -126,9 +116,9 @@ async def notification_agent(state: RadarState) -> RadarState:
         # Merge & deduplicate (state first, then .env extras)
         seen: set = set()
         recipients: list = []
-        for email in state_recipients + env_recipients:
-            normalized = email.strip().lower()
-            if normalized and normalized not in seen:
+        for addr in state_recipients + env_recipients:
+            normalized = addr.strip().lower()
+            if normalized and "@" in normalized and normalized not in seen:
                 seen.add(normalized)
                 recipients.append(normalized)
 
@@ -138,22 +128,16 @@ async def notification_agent(state: RadarState) -> RadarState:
             emails=recipients,
         )
 
-        # Extract executive summary (first section of digest)
+        # ── PHASE 2: LLM composes subject + html_body only ───────
         exec_summary = digest_md[:2000] if len(digest_md) > 2000 else digest_md
-
-        dashboard_url = f"http://localhost:3000/runs"
+        dashboard_url = "http://localhost:3000/runs"
         user_prompt = (
             f"Executive summary for email body:\n\n{exec_summary}\n\n"
-            f"PDF path to attach: {pdf_path}\n"
-            f"Recipients: {json.dumps(recipients)}\n"
-            f"Run ID: {run_id}\n\n"
-            "1. Compose a professional subject line.\n"
-            "2. Compose the email body with the executive summary.\n"
-            f"3. Include a link to the full dashboard at the end of the email body: {dashboard_url}\n"
-            "   Use text like: 'View full dashboard and drill into findings: <link>'\n"
-            "4. Call send_email_mcp to deliver the email.\n"
-            "5. Save delivery status with write_memory.\n"
-            "6. Emit the delivery result JSON."
+            f"Run ID: {run_id}\n"
+            f"Dashboard URL: {dashboard_url}\n\n"
+            "Compose the email subject line and HTML body. "
+            "End the body with a link: 'View full dashboard: <link>'. "
+            "Emit the result JSON."
         )
 
         result = await _react_agent.ainvoke(
@@ -164,11 +148,32 @@ async def notification_agent(state: RadarState) -> RadarState:
         )
 
         final_text = extract_agent_output(result["messages"])
-        delivery = parse_json_object(final_text)
+        composed = parse_json_object(final_text)
 
-        email_status = delivery.get("status", "unknown")
+        subject = composed.get("subject", f"Frontier AI Radar — Run {run_id}")
+        html_body = composed.get("html_body", exec_summary)
+
+        # ── PHASE 3: Send email deterministically ─────────────────
+        email_status = "skipped_no_recipients"
+        if recipients:
+            send_result = await send_email_mcp.ainvoke({
+                "to": recipients,
+                "subject": subject,
+                "body": html_body,
+                "pdf_path": pdf_path,
+            })
+            email_status = "sent" if send_result else "failed"
+            logger.info(
+                "Notification Agent: email sent",
+                status=email_status,
+                recipients=recipients,
+                result=send_result,
+            )
+        else:
+            logger.warning("Notification Agent: no recipients, skipping send")
 
         # ── PHASE 4: MANDATORY write_memory (deterministic) ──────
+        delivery = {"status": email_status, "recipients": recipients, "subject": subject}
         await write_memory.ainvoke({
             "type": "long_term",
             "key": "last_notification_status",
