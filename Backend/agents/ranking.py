@@ -19,6 +19,7 @@ from agents.base_agent import (
     handle_agent_error,
 )
 from core.tools import read_memory, write_memory, search_entity_memory
+from agents.schemas import DeduplicationOutput
 from config.settings import settings, load_scoring_config
 from db.persist import update_scores as db_update_scores
 import structlog
@@ -147,6 +148,7 @@ RANKING_CONFIG = {
 _react_agent = build_react_agent(
     system_prompt=RANKING_CONFIG["system_prompt"],
     tools=RANKING_CONFIG["tools"],
+    response_format=DeduplicationOutput,
 )
 
 
@@ -241,8 +243,12 @@ async def ranking_agent(state: RadarState) -> RadarState:
                     )},
                 )
 
-                final_text = extract_agent_output(result["messages"])
-                keep_ids = parse_json_output(final_text)
+                structured = result.get("structured_response")
+                if structured is not None:
+                    keep_ids = structured.ids_to_keep
+                else:
+                    final_text = extract_agent_output(result["messages"])
+                    keep_ids = parse_json_output(final_text)
 
                 # If LLM returned a list of IDs to keep, filter
                 if keep_ids and isinstance(keep_ids[0], str):

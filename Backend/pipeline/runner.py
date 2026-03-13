@@ -164,14 +164,56 @@ def prepare_radar_run(
     )
 
 
+async def _build_checkpointer():
+    """Create an AsyncPostgresSaver for LangGraph state persistence.
+
+    Returns None (with a warning) if psycopg v3 is not installed or
+    the connection fails — the pipeline still runs, just without checkpointing.
+    """
+    try:
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        from config.settings import settings
+
+        db_url = settings.database_url
+        # psycopg v3 needs postgresql+psycopg:// scheme
+        conn_str = (
+            db_url
+            .replace("postgresql://", "postgresql+psycopg://", 1)
+            .replace("postgres://",   "postgresql+psycopg://", 1)
+        )
+        # Strip SQLAlchemy options= param — not valid for raw psycopg3 connstr
+        if "options=" in conn_str:
+            from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
+            parsed = urlparse(conn_str)
+            qs = {k: v for k, v in parse_qs(parsed.query).items() if k != "options"}
+            conn_str = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+
+        checkpointer = AsyncPostgresSaver.from_conn_string(conn_str)
+        # setup() creates the checkpoint tables (idempotent)
+        await checkpointer.setup()
+        logger.info("LangGraph checkpointer: PostgreSQL ready")
+        return checkpointer
+    except Exception as e:
+        logger.warning("LangGraph checkpointer unavailable — running without state persistence",
+                       error=str(e))
+        return None
+
+
 async def execute_prepared_radar(initial_state: RadarState) -> RadarState:
     """Execute a previously prepared run state and update final DB status."""
-    graph = create_radar_graph()
-    t0 = time.time()
+    run_id = initial_state.get("run_id", "run-default")
     run_db_id = initial_state.get("run_db_id", 0)
+    t0 = time.time()
+
+    # Build checkpointer — enables full LangGraph state persistence per run
+    checkpointer = await _build_checkpointer()
+    graph = create_radar_graph(checkpointer=checkpointer)
+
+    # thread_id namespaces the checkpoint so each run has its own state history
+    invoke_config = {"configurable": {"thread_id": run_id}}
 
     try:
-        final_state = await graph.ainvoke(initial_state)
+        final_state = await graph.ainvoke(initial_state, config=invoke_config)
         elapsed = int(time.time() - t0)
 
         # ── DB: mark run as success ──────────────────────────────────

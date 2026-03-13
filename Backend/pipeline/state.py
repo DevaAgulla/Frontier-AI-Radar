@@ -109,5 +109,10 @@ class RadarState(TypedDict):
     email_status: str
     errors: Annotated[list[AgentError], add]
 
+    # Persona (loaded by API layer from persona_templates table)
+    persona_id: Optional[str]       # UUID of active persona_template (None = default)
+    persona_prompt: Optional[str]   # digest_system_prompt from persona_templates
+    suggested_questions: Optional[list]  # pre-seeded questions for the active persona
+
     # ReAct loop tracking
     agent_iterations: dict  # {agent_name: current_iteration}

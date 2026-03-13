@@ -67,8 +67,17 @@ async def intel_join(state: RadarState) -> dict:
     return {}
 
 
-def create_radar_graph() -> StateGraph:
-    """Create the full LangGraph state graph for Frontier AI Radar."""
+def create_radar_graph(checkpointer=None) -> StateGraph:
+    """Create the full LangGraph state graph for Frontier AI Radar.
+
+    Args:
+        checkpointer: Optional LangGraph checkpointer (AsyncPostgresSaver).
+                      When provided, full RadarState is persisted to PostgreSQL
+                      after every node — enables resume-on-failure, HIL, and
+                      streaming. Caller must pass:
+                        config={"configurable": {"thread_id": run_id}}
+                      to graph.ainvoke() so checkpoints are namespaced per run.
+    """
     graph = StateGraph(RadarState)
 
     # ── ADD ALL AGENT NODES ───────────────────────────────────────
@@ -130,4 +139,7 @@ def create_radar_graph() -> StateGraph:
     graph.add_edge("digest", "report_generator")
     graph.add_edge("report_generator", "notification")
     graph.add_edge("notification", END)
-    return graph.compile()
+    compile_kwargs = {}
+    if checkpointer is not None:
+        compile_kwargs["checkpointer"] = checkpointer
+    return graph.compile(**compile_kwargs)

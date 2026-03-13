@@ -21,12 +21,19 @@ pydantic-settings>=2.1.0
 python-dotenv>=1.0.0
 pyyaml>=6.0.1
 
-# Database (SQLite via SQLAlchemy — no external server needed)
+# Database — PostgreSQL (production) + pgvector extension
 sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9          # SQLAlchemy ORM (sync)
+psycopg[binary]>=3.1.5          # langgraph-checkpoint-postgres requires psycopg v3 (async)
+pgvector>=0.3.0
+langgraph-checkpoint-postgres>=2.0.0
 
 # Utilities
 structlog>=24.1.0
 watchfiles>=1.0.0
+
+# Redis (Azure Cache for Redis — session cache, job queue, cooldown TTLs)
+redis>=5.0.0
 
 # PDF generation (pure Python, no system deps)
 xhtml2pdf>=0.2.11
@@ -46,9 +53,11 @@ datasets>=2.16.0
 tavily-python>=0.3.0
 arxiv>=2.1.0
 
-# Vector store (entity memory)
-chromadb>=0.4.0
+# Vector store — pgvector replaces ChromaDB (kept for local fallback only)
 sentence-transformers>=2.3.0
+
+# Voice agent
+elevenlabs>=1.0.0
 
 # Web framework
 fastapi>=0.109.0

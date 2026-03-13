@@ -16,6 +16,7 @@ from agents.base_agent import (
     handle_agent_error,
 )
 from core.tools import read_memory, write_memory, search_entity_memory
+from agents.schemas import DigestOutput
 from config.settings import settings
 import structlog
 
@@ -104,6 +105,7 @@ _optional_tools = [read_memory, search_entity_memory]
 _react_agent = build_react_agent(
     system_prompt=DIGEST_CONFIG["system_prompt"],
     tools=_optional_tools,
+    response_format=DigestOutput,
 )
 
 
@@ -121,8 +123,25 @@ async def digest_agent(state: RadarState) -> RadarState:
     try:
         ranked = state.get("ranked_findings", [])
         verdicts = state.get("verification_verdicts", [])
+        persona_prompt = state.get("persona_prompt") or ""
+        persona_id = state.get("persona_id") or "default"
 
-        logger.info("Digest Agent: starting", findings=len(ranked))
+        logger.info("Digest Agent: starting", findings=len(ranked), persona=persona_id)
+
+        # ── Persona-aware system prompt ───────────────────────────
+        # If a persona_prompt is set in state (loaded from persona_templates),
+        # use it instead of the default. The module-level _react_agent uses
+        # the default; we build a one-off agent for persona runs.
+        if persona_prompt:
+            from agents.base_agent import build_react_agent
+            from agents.schemas import DigestOutput
+            persona_agent = build_react_agent(
+                system_prompt=persona_prompt,
+                tools=_optional_tools,
+                response_format=DigestOutput,
+            )
+        else:
+            persona_agent = _react_agent
 
         user_prompt = (
             f"Ranked findings ({len(ranked)} total):\n"
@@ -137,15 +156,22 @@ async def digest_agent(state: RadarState) -> RadarState:
             "Emit the digest JSON object."
         )
 
-        result = await _react_agent.ainvoke(
+        result = await persona_agent.ainvoke(
             {"messages": [HumanMessage(content=user_prompt)]},
             config={"recursion_limit": get_recursion_limit(
                 DIGEST_CONFIG["config"]["max_iterations"]
             )},
         )
 
-        final_text = extract_agent_output(result["messages"])
-        digest = parse_json_object(final_text)
+        structured = result.get("structured_response")
+        if structured is not None:
+            digest = structured.model_dump()
+            # Convert nested DigestSectionsOutput to plain dict
+            if hasattr(structured.sections, "model_dump"):
+                digest["sections"] = structured.sections.model_dump()
+        else:
+            final_text = extract_agent_output(result["messages"])
+            digest = parse_json_object(final_text)
 
         # Build markdown from digest sections
         sections = digest.get("sections", {})

@@ -1269,7 +1269,25 @@ async def read_memory(type: str, key: str) -> Dict[str, Any]:
             "value": value,
             "found": value is not None,
         }
-    # short_term and entity types not yet wired
+    if type == "entity":
+        # key is treated as a search query for entity memory
+        from memory.entity_store import get_entity_store
+        results = get_entity_store().search_entities(key, top_k=5)
+        return {
+            "type": type,
+            "key": key,
+            "value": results,
+            "found": bool(results),
+        }
+    # short_term: read directly from memory_kv with st_ prefix
+    if type == "short_term":
+        value = _lt_read(f"st_{key}")
+        return {
+            "type": type,
+            "key": key,
+            "value": value,
+            "found": value is not None,
+        }
     return {
         "type": type,
         "key": key,
@@ -1305,17 +1323,40 @@ async def write_memory(type: str, key: str, value: Any) -> Dict[str, Any]:
             except (json.JSONDecodeError, TypeError):
                 pass
         _lt_write(key, real_value)
-        return {
-            "type": type,
-            "key": key,
-            "success": True,
-        }
-    # short_term and entity types not yet wired — accept silently
-    return {
-        "type": type,
-        "key": key,
-        "success": True,
-    }
+        return {"type": type, "key": key, "success": True}
+
+    if type == "entity":
+        # value must be a dict (EntityProfile) or JSON string of one
+        from memory.entity_store import get_entity_store
+        entity_data = value
+        if isinstance(value, str):
+            try:
+                entity_data = json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                entity_data = {"id": key, "name": key}
+        if not isinstance(entity_data, dict):
+            entity_data = {"id": key, "name": str(value)}
+        # Ensure required fields have defaults
+        entity_data.setdefault("id", key)
+        entity_data.setdefault("name", key)
+        entity_data.setdefault("entity_type", "unknown")
+        entity_data.setdefault("description", "")
+        entity_data.setdefault("source", "agent")
+        get_entity_store().add_entity(entity_data)
+        return {"type": type, "key": key, "success": True}
+
+    if type == "short_term":
+        # Persist short_term data to memory_kv with st_ prefix for cross-run access
+        real_value = value
+        if isinstance(value, str):
+            try:
+                real_value = json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        _lt_write(f"st_{key}", real_value)
+        return {"type": type, "key": key, "success": True}
+
+    return {"type": type, "key": key, "success": True}
 
 
 class SearchEntityMemoryInput(BaseModel):

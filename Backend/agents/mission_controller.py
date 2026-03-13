@@ -16,6 +16,7 @@ from agents.base_agent import (
     handle_agent_error,
 )
 from core.tools import read_memory, write_memory, search_entity_memory
+from agents.schemas import MissionPlanOutput
 from config.settings import settings
 import structlog
 
@@ -91,6 +92,7 @@ _optional_tools = [read_memory, search_entity_memory]
 _react_agent = build_react_agent(
     system_prompt=MISSION_CONTROLLER_CONFIG["system_prompt"],
     tools=_optional_tools,
+    response_format=MissionPlanOutput,
 )
 
 
@@ -124,8 +126,12 @@ async def mission_controller_agent(state: RadarState) -> RadarState:
                 MISSION_CONTROLLER_CONFIG["config"]["max_iterations"]
             )},
         )
-        final_text = extract_agent_output(result["messages"])
-        plan = parse_json_object(final_text)
+        structured = result.get("structured_response")
+        if structured is not None:
+            plan = structured.model_dump()
+        else:
+            final_text = extract_agent_output(result["messages"])
+            plan = parse_json_object(final_text)
         logger.info("Mission Controller: complete", plan_keys=list(plan.keys()))
 
         return {

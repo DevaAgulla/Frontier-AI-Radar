@@ -23,6 +23,7 @@ from core.tools import (
     read_memory,
     write_memory,  # used in Phase 4 (mandatory)
 )
+from agents.schemas import VerificationOutput
 from config.settings import settings
 import structlog
 
@@ -118,6 +119,7 @@ _optional_tools = [
 _react_agent = build_react_agent(
     system_prompt=VERIFICATION_CONFIG["system_prompt"],
     tools=_optional_tools,
+    response_format=VerificationOutput,
 )
 
 
@@ -158,8 +160,12 @@ async def verification_agent(state: RadarState) -> RadarState:
             )},
         )
 
-        final_text = extract_agent_output(result["messages"])
-        verdicts = parse_json_output(final_text)
+        structured = result.get("structured_response")
+        if structured is not None:
+            verdicts = [v.model_dump() for v in structured.verdicts]
+        else:
+            final_text = extract_agent_output(result["messages"])
+            verdicts = parse_json_output(final_text)
 
         # ── PHASE 4: MANDATORY write_memory (deterministic) ──────
         await write_memory.ainvoke({

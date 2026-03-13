@@ -59,10 +59,17 @@ class Settings(BaseSettings):
     email_from: str = Field(..., env="EMAIL_FROM")
     email_recipients: str = Field(..., env="EMAIL_RECIPIENTS")  # comma-separated
 
-    # Database (SQLite – local file, no external server needed)
+    # Database — PostgreSQL (production) or SQLite (local fallback)
     database_url: str = Field(
         default="sqlite:///db/frontier_ai_radar.db", env="DATABASE_URL"
     )
+
+    # Redis
+    redis_url: Optional[str] = Field(default=None, env="REDIS_URL")
+
+    # Voice Agent — ElevenLabs
+    elevenlabs_api_key: Optional[str] = Field(default=None, env="ELEVENLABS_API_KEY")
+    elevenlabs_voice_id: str = Field(default="21m00Tcm4TlvDq8ikWAM", env="ELEVENLABS_VOICE_ID")
 
     # Memory/Storage
     long_term_memory_path: Path = Field(default=Path("data/long_term"), env="LONG_TERM_MEMORY_PATH")
