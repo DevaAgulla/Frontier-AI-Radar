@@ -20,7 +20,7 @@ on stub tools returning mock data).
 
 from langgraph.graph import StateGraph, START, END
 from pipeline.state import RadarState
-from pipeline.router import route_after_intelligence, route_to_intel_agents
+from pipeline.router import route_after_intelligence, route_to_intel_agents, route_from_start
 
 # Command
 from agents.mission_controller import mission_controller_agent
@@ -70,17 +70,43 @@ async def intel_join(state: RadarState) -> dict:
 def create_radar_graph(checkpointer=None) -> StateGraph:
     """Create the full LangGraph state graph for Frontier AI Radar.
 
+    Architecture
+    ────────────
+    START
+      │ route_from_start (conditional)
+      ├─── chat_query set  ──► chat_agent ──► END
+      └─── digest run      ──► mission_controller ──► … ──► notification ──► END
+
+    The chat_agent node is a compiled create_react_agent subgraph.  LangGraph
+    passes the shared ``messages`` key into it and merges the updated messages
+    back into RadarState automatically — no wrapper function needed.  Token
+    streaming works via astream_events(version="v2") on this graph.
+
+    Every future feature (persona, alert, compare) is a new branch from START
+    — added here without touching any existing node or edge.
+
     Args:
         checkpointer: Optional LangGraph checkpointer (AsyncPostgresSaver).
-                      When provided, full RadarState is persisted to PostgreSQL
-                      after every node — enables resume-on-failure, HIL, and
-                      streaming. Caller must pass:
-                        config={"configurable": {"thread_id": run_id}}
-                      to graph.ainvoke() so checkpoints are namespaced per run.
+                      Shared between the digest pipeline and the chat agent so
+                      query_digest_state tool can read from digest run checkpoints
+                      (thread_id = "run_{run_db_id}") while the chat session is
+                      checkpointed separately (thread_id = "chat_{session_id}").
     """
+    from agents.chat_agent import create_chat_agent
+
     graph = StateGraph(RadarState)
 
-    # ── ADD ALL AGENT NODES ───────────────────────────────────────
+    # ── CHAT AGENT NODE (Layer 0 — pre-digest branch) ─────────────
+    # create_react_agent returns a compiled graph with MessagesState.
+    # Since RadarState now has messages: Annotated[list[BaseMessage], add_messages],
+    # LangGraph treats "messages" as a shared channel and passes it directly
+    # into the subgraph without any wrapper.  astream_events propagates all
+    # inner LLM token events through to the parent graph's stream.
+    chat_agent = create_chat_agent(checkpointer=checkpointer)
+    graph.add_node("chat_agent", chat_agent)
+    graph.add_edge("chat_agent", END)
+
+    # ── ADD ALL DIGEST PIPELINE NODES ─────────────────────────────
     # Layer 1
     graph.add_node("mission_controller", mission_controller_agent)
     # Layer 2
@@ -100,8 +126,12 @@ def create_radar_graph(checkpointer=None) -> StateGraph:
     graph.add_node("report_generator", report_generator_agent)
     graph.add_node("notification", notification_agent)
 
-    # ── START -> LAYER 1 ──────────────────────────────────────────
-    graph.add_edge(START, "mission_controller")
+    # ── START → conditional: chat OR digest ───────────────────────
+    graph.add_conditional_edges(
+        START,
+        route_from_start,
+        ["chat_agent", "mission_controller"],
+    )
 
     # ── LAYER 1 -> LAYER 2 (sequential) ───────────────────────────
     graph.add_edge("mission_controller", "strategy_planner")

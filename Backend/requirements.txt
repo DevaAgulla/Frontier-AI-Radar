@@ -63,10 +63,6 @@ elevenlabs>=1.0.0
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 
-# NOTE: streamlit, weasyprint, playwright removed — they require system deps
-# that are unavailable on free cloud platforms. We use xhtml2pdf for PDF
-# generation and Next.js for the frontend instead.
-
 # Authentication (JWT tokens)
 PyJWT>=2.8.0
 
@@ -75,3 +71,6 @@ apscheduler>=3.10.0
 
 # PDF extraction (lightweight, no system deps)
 pdfplumber>=0.10.0
+
+# Azure Blob Storage — digest PDF + audio archival
+azure-storage-blob>=12.19.0

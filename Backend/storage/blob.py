@@ -1,0 +1,165 @@
+"""Azure Blob Storage utilities for Frontier AI Radar.
+
+Handles:
+- Uploading PDF / audio files to blob storage
+- Generating time-limited SAS URLs (24 h default)
+- SAS caching logic (checks DB cache before regenerating)
+
+Blob path convention inside the container:
+    Frontier-AI-Radar/digest-<YYYYMMDD-HHMMSS>/digest.pdf
+    Frontier-AI-Radar/digest-<YYYYMMDD-HHMMSS>/digest_audio.mp3
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
+
+import structlog
+
+logger = structlog.get_logger()
+
+BLOB_ROOT_FOLDER = "Frontier-AI-Radar"
+SAS_EXPIRY_HOURS = 24
+# Refresh SAS if it expires within this buffer (to avoid serving near-expired URLs)
+_SAS_REFRESH_BUFFER_HOURS = 1
+
+
+# ── internal helpers ──────────────────────────────────────────────────────────
+
+def _get_service_client():
+    """Return a BlobServiceClient.  Raises RuntimeError if not configured."""
+    from azure.storage.blob import BlobServiceClient
+    from config.settings import settings
+
+    conn = settings.azure_blob_connection_string
+    if not conn:
+        raise RuntimeError(
+            "AZURE_BLOB_CONNECTION_STRING is not set — blob storage unavailable."
+        )
+    return BlobServiceClient.from_connection_string(conn)
+
+
+def _get_container() -> str:
+    from config.settings import settings
+
+    name = settings.azure_blob_container
+    if not name:
+        raise RuntimeError(
+            "AZURE_BLOB_CONTAINER is not set — blob storage unavailable."
+        )
+    return name
+
+
+def is_configured() -> bool:
+    """Return True if Azure Blob credentials are present in settings."""
+    try:
+        from config.settings import settings
+        return bool(settings.azure_blob_connection_string and settings.azure_blob_container)
+    except Exception:
+        return False
+
+
+# ── public helpers ────────────────────────────────────────────────────────────
+
+def blob_path_for_run(date_str: str, filename: str) -> str:
+    """Canonical blob path for a digest asset.
+
+    Args:
+        date_str: e.g. "20260315-170000"  (derived from PDF filename or run started_at)
+        filename: e.g. "digest.pdf" or "digest_audio.mp3"
+
+    Returns:
+        "Frontier-AI-Radar/digest-20260315-170000/digest.pdf"
+    """
+    return f"{BLOB_ROOT_FOLDER}/digest-{date_str}/{filename}"
+
+
+def upload_file(local_path: Path, blob_path: str) -> str:
+    """Upload *local_path* to *blob_path* inside the configured container.
+
+    Returns the blob_path on success; raises on failure.
+    """
+    client = _get_service_client()
+    container = _get_container()
+    blob_client = client.get_blob_client(container=container, blob=blob_path)
+
+    with open(local_path, "rb") as fh:
+        blob_client.upload_blob(fh, overwrite=True)
+
+    logger.info("blob_upload_ok", blob_path=blob_path, size_bytes=local_path.stat().st_size)
+    return blob_path
+
+
+def generate_sas_url(blob_path: str, expiry_hours: int = SAS_EXPIRY_HOURS) -> str:
+    """Generate a read-only SAS URL for *blob_path* (valid for *expiry_hours*)."""
+    from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+
+    client = _get_service_client()
+    container = _get_container()
+    account_name: str = client.account_name  # type: ignore[assignment]
+    account_key: str = client.credential.account_key  # type: ignore[union-attr]
+
+    expiry = datetime.now(timezone.utc) + timedelta(hours=expiry_hours)
+    sas_token = generate_blob_sas(
+        account_name=account_name,
+        container_name=container,
+        blob_name=blob_path,
+        account_key=account_key,
+        permission=BlobSasPermissions(read=True),
+        expiry=expiry,
+    )
+    url = (
+        f"https://{account_name}.blob.core.windows.net"
+        f"/{container}/{blob_path}?{sas_token}"
+    )
+    logger.info("sas_generated", blob_path=blob_path, expires=expiry.isoformat())
+    return url
+
+
+def get_or_refresh_sas(
+    sas_cache: Dict[str, Any],
+    field: str,
+    blob_path: Optional[str],
+    expiry_hours: int = SAS_EXPIRY_HOURS,
+) -> Tuple[Optional[str], Optional[Dict[str, str]]]:
+    """Return a valid SAS URL, using the DB cache where possible.
+
+    Args:
+        sas_cache:    The current value of ``run.blob_sas_cache`` (may be {} or None).
+        field:        "pdf" or "audio"
+        blob_path:    The blob path stored in ``run.blob_pdf_path`` / ``run.blob_audio_path``.
+        expiry_hours: Lifetime for a freshly-generated SAS URL.
+
+    Returns:
+        (url, new_cache_field)
+        - If the cached URL is still valid:   (cached_url, None)          — no DB update needed
+        - If a new URL was generated:         (new_url,    {"url": ..., "expires_at": ...})
+        - If blob_path is absent or on error: (None,       None)
+    """
+    if not blob_path:
+        return None, None
+
+    cached = (sas_cache or {}).get(field) or {}
+    expires_at_str: str = cached.get("expires_at", "")
+    cached_url: str = cached.get("url", "")
+
+    if expires_at_str and cached_url:
+        try:
+            expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+            cutoff = datetime.now(timezone.utc) + timedelta(hours=_SAS_REFRESH_BUFFER_HOURS)
+            if expires_at > cutoff:
+                return cached_url, None   # still fresh — use as-is
+        except Exception:
+            pass  # parse failed → fall through to regenerate
+
+    # Generate a new SAS
+    try:
+        new_url = generate_sas_url(blob_path, expiry_hours=expiry_hours)
+        new_expiry = (
+            datetime.now(timezone.utc) + timedelta(hours=expiry_hours)
+        ).isoformat()
+        return new_url, {"url": new_url, "expires_at": new_expiry}
+    except Exception as exc:
+        logger.error("sas_generation_failed", blob_path=blob_path, error=str(exc))
+        return None, None

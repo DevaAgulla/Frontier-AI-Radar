@@ -27,14 +27,14 @@ export async function GET(
       );
     }
 
-    const contentType = res.headers.get("content-type") || "application/pdf";
-    const disposition = res.headers.get("content-disposition") || `attachment; filename="digest-run-${runId}.pdf"`;
     const bytes = await res.arrayBuffer();
     return new NextResponse(bytes, {
       status: 200,
       headers: {
-        "Content-Type": contentType,
-        "Content-Disposition": disposition,
+        "Content-Type": "application/pdf",
+        // inline = browser renders in iframe; never attachment
+        "Content-Disposition": `inline; filename="digest-run-${runId}.pdf"`,
+        "Cache-Control": "private, max-age=3600",
       },
     });
   } catch (error) {

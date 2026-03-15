@@ -31,7 +31,14 @@ export default function SigninPage() {
     setLoading(false);
 
     if (result.ok) {
-      router.push("/");
+      // Route based on role: non-admin users go to the user digest view
+      try {
+        const stored = globalThis.localStorage?.getItem("frontier_ai_radar_user");
+        const u = stored ? JSON.parse(stored) : null;
+        router.push(u?.is_admin === false ? "/digest" : "/");
+      } catch {
+        router.push("/");
+      }
     } else {
       setError(result.error || "Sign in failed. Please try again.");
     }

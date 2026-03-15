@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python generate_pdf.py)",
+      "Bash(python gen2.py)",
+      "Bash(rm gen2.py)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''scripts/setup_db.py''\\).read\\(\\)\\); print\\(''✅ Syntax OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''scripts/setup_db.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''Syntax OK''\\)\")",
+      "Bash(python -c \":*)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''c:/Users/RathlavathRameshnaya/Videos/InternalHackathon/Backend/scripts/setup_db.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''Syntax OK''\\)\")",
+      "Bash(python -c \"import langgraph; print\\(langgraph.__version__\\)\")",
+      "Bash(pip show:*)",
+      "Bash(python -c \"from langgraph.prebuilt import create_react_agent; import inspect; sig = inspect.signature\\(create_react_agent\\); print\\(list\\(sig.parameters.keys\\(\\)\\)\\)\")",
+      "Bash(python scripts/setup_db.py)",
+      "Bash(PYTHONUTF8=1 python scripts/setup_db.py)",
+      "Read(//c/Users/RathlavathRameshnaya/.claude/projects/c--Users-RathlavathRameshnaya-Videos-InternalHackathon/dd3986f4-d023-4acd-832e-83620a60bb5c/tool-results/**)",
+      "Bash(python-venvScriptspython.exe -m pip install \"psycopg[binary]>=3.1.5\" --quiet)",
+      "Bash(\"./python-venv/Scripts/pip.exe\" install:*)",
+      "Bash(\"c:/Users/RathlavathRameshnaya/Videos/InternalHackathon/python-venv/Scripts/python.exe\" -c \"import psycopg; print\\(''psycopg v3:'', psycopg.__version__\\); from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver; print\\(''AsyncPostgresSaver: OK''\\)\")",
+      "Bash(\"c:/Users/RathlavathRameshnaya/Videos/InternalHackathon/python-venv/Scripts/pip.exe\" install:*)",
+      "Bash(\"c:/Users/RathlavathRameshnaya/Videos/InternalHackathon/python-venv/Scripts/python.exe\" -c \"from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver; print\\(''AsyncPostgresSaver: OK''\\)\")",
+      "WebSearch",
+      "Bash(python scripts/seed_centific_competitors.py)",
+      "Bash(python -c \"import elevenlabs; print\\(elevenlabs.__version__\\)\")",
+      "Bash(python -c \"from elevenlabs.client import ElevenLabs; print\\(''client ok''\\)\")",
+      "Bash(python -c \"import pdfplumber; print\\(''pdfplumber ok''\\)\")",
+      "Bash(pip install:*)",
+      "Bash(python -venv/Scripts/pip show elevenlabs)",
+      "Bash(\"c:/Users/RathlavathRameshnaya/Videos/InternalHackathon/python-venv/Scripts/pip\" show:*)",
+      "Bash(\"c:/Users/RathlavathRameshnaya/Videos/InternalHackathon/python-venv/Scripts/pip\" install:*)",
+      "Bash(python -c \"import httpx; print\\(''httpx ok''\\)\")"
+    ]
+  }
+}

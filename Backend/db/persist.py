@@ -298,6 +298,33 @@ def finish_run(
     )
 
 
+# ── 6. UPDATE BLOB PATHS (after Azure Blob upload) ──────────────────────
+
+def update_run_blob_paths(
+    run_db_id: int,
+    blob_pdf_path: Optional[str] = None,
+    blob_audio_path: Optional[str] = None,
+) -> None:
+    """Store Azure Blob paths on the Run row after upload completes."""
+    with get_session() as session:
+        run = session.get(Run, run_db_id)
+        if not run:
+            logger.warning("update_run_blob_paths: run not found", run_id=run_db_id)
+            return
+        if blob_pdf_path:
+            run.blob_pdf_path = blob_pdf_path
+        if blob_audio_path:
+            run.blob_audio_path = blob_audio_path
+        session.commit()
+
+    logger.info(
+        "DB: blob paths updated",
+        run_db_id=run_db_id,
+        pdf=blob_pdf_path,
+        audio=blob_audio_path,
+    )
+
+
 # ── COMPETITOR SOURCE MANAGEMENT ─────────────────────────────────────────
 
 def seed_default_competitors() -> None:

@@ -20,7 +20,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="overflow-x-hidden">
+    <html lang="en" className="overflow-x-hidden dark">
       <body className={`${inter.variable} antialiased overflow-x-hidden`}>
         <AuthProvider>
           <LayoutWithSidebar>{children}</LayoutWithSidebar>

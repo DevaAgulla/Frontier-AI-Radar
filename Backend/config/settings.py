@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     elevenlabs_api_key: Optional[str] = Field(default=None, env="ELEVENLABS_API_KEY")
     elevenlabs_voice_id: str = Field(default="21m00Tcm4TlvDq8ikWAM", env="ELEVENLABS_VOICE_ID")
 
+    # Azure Blob Storage — digest PDF + audio archival
+    azure_blob_connection_string: Optional[str] = Field(default=None, env="AZURE_BLOB_CONNECTION_STRING")
+    azure_blob_container: Optional[str] = Field(default=None, env="AZURE_BLOB_CONTAINER")
+
     # Memory/Storage
     long_term_memory_path: Path = Field(default=Path("data/long_term"), env="LONG_TERM_MEMORY_PATH")
     entity_store_path: Path = Field(default=Path("data/entity_store"), env="ENTITY_STORE_PATH")

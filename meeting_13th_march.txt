@@ -1,0 +1,939 @@
+Frontier AI Radar - Enhancements-20260313_210216-Meeting Recording 
+
+March 13, 2026, 3:32PM 
+
+27m 2s 
+
+ 
+Rathlavath, Ramesh nayak started transcription 
+
+ 
+Rathlavath, Ramesh nayak   0:04 
+You have been muted, muted, Abhishek. You have to unmute and then. 
+
+ 
+Mukherji, Abhishek   0:09 
+OK, OK, so so mainly what I'm saying is Vasu's initial request is for a is for this thing right? For this digest. So his thought process is. 
+
+ 
+Rathlavath, Ramesh nayak   0:10 
+OK. 
+
+ 
+Mukherji, Abhishek   0:25 
+That he will create this digest and he'll start circulating, right. So mainly what I'm saying is our new thing is digressing from that, right. So I mean firstly like we'll have, we'll put this thing. 
+
+ 
+Rathlavath, Ramesh nayak   0:39 
+OK. 
+
+ 
+Mukherji, Abhishek   0:40 
+Only when this is built right then we will then we will actually share it with Vasu is what I'm thinking the persona based thing right. The the core thing that he wants wanted is this digest. So so that's what why I'm saying. 
+The audio book idea which is interactive audio book should be done on the digest to begin with and then we share it right. I mean we we start doing like alpha, beta testing kind of a thing. We share it with the limited people like even Vicky. 
+And her team, maybe Raf's team, right? I mean, see again, it'll be like, yeah, we start sharing that, right? And including this voice agent based like a interactive audio book. 
+So in parallel we we build this because they're going to come back and they're going to find very like big holes in this. I'm pretty sure about it, right? And that's fine to have holes, right? Because which means that we have to improve our. 
+Prompts, right? That's all it means, right? And so with their feedback we will improve our prompts. But at the same time we build this thing such that later they can actually use this directly as their as a playground. 
+
+ 
+Rathlavath, Ramesh nayak   1:50 
+Mm. 
+
+ 
+Mukherji, Abhishek   2:03 
+Where on top of the things that we want and literally I'm telling you there won't be A1 size fits all. Quite honestly, like in the different situations, right? What happens is say for example Samir and Prithvi are going and talking to Open AI. 
+So in that right before that conversation, they want a lot of Nuggets. 
+To talk and there are like these sales kind of agents that actually help you prepare like a pitch and all that right. So I eventually I want to mature this persona based thing right that also because say for example there right it will also do a research on the. 
+Person you're going to meet. 
+So that is also like if you can add once you build this right we have the next enhancement to that one will be like a sales sales assist which will basically do research on the person that you are. 
+Going to meet. So this will be the natural extension of that anyway. So that's what I'm I mean my point was that let's do this interactive voice on the digest first in parallel we'd build this persona based thing and the next thing we add to the persona based is the sales assist. 
+Which is OK, I'm meeting this person. Can you actually help me pitch to that person based on their profile and what they do currently? Go ahead, Harshit. 
+
+ 
+Harshit Rajgarhia   3:41 
+When you say interactive audio book, I know concept of audio book. 
+And I know the concept of interactive audio book. 
+When? So how do you envision a interactive audio book? 
+
+ 
+Mukherji, Abhishek   3:57 
+Yeah. So let me say how I envision, right. So the the base digest is the. 
+
+ 
+Harshit Rajgarhia   4:00 
+Because interactive audio book is not a not a solved problem just to on the technology point I'm trying to. 
+
+ 
+Mukherji, Abhishek   4:07 
+The interactive audio book is not the audio book is right. 
+
+ 
+Harshit Rajgarhia   4:10 
+Audiobook is. 
+
+ 
+Mukherji, Abhishek   4:13 
+Right. So what I'm what I'm just saying is maybe the interactive audio book is basically, I don't know. I mean if you upload nowadays, right, all these multimodal models, especially Gemini and all that, right. If you if you it's like, it's like. 
+
+ 
+Harshit Rajgarhia   4:27 
+Yeah. 
+
+ 
+Mukherji, Abhishek   4:32 
+I would say textual, what is it called? Reasoning, right? Reasoning kind of it. It will fall under that, Arshit. So basically this is what I said, right? OK, this is the latest digest I've received, right? So I will say. 
+
+ 
+Harshit Rajgarhia   4:49 
+Hmm. 
+
+ 
+Mukherji, Abhishek   4:51 
+OK, a person can say what are the top three things you want to tell me from this digest, right? 
+
+ 
+Harshit Rajgarhia   4:56 
+Where where I'm, I'm, I'm I I know what it can say. It can where it will say. 
+
+ 
+Mukherji, Abhishek   5:01 
+Hmm. 
+
+ 
+Harshit Rajgarhia   5:02 
+I'm I'm asking the form. I'm asking the form. 
+
+ 
+Mukherji, Abhishek   5:03 
+That's a good one. So I'm actually, I'm actually thinking I'm, I'm, I'm again basically can we actually put this in some kind of a? 
+
+ 
+Harshit Rajgarhia   5:09 
+Yeah. 
+
+ 
+Mukherji, Abhishek   5:15 
+Like an app that somebody it's like a website only which somebody opens in the in the in their phone right? And then it has some like a this voice thing. 
+Voice agent attached to it, which will do the narrative, but it'll still be interactive, so that's what I'm thinking. 
+
+ 
+Harshit Rajgarhia   5:37 
+Again, you again, it's a chat bot, right? It's not an interactive audio book. 
+
+ 
+Mukherji, Abhishek   5:43 
+No, no. A chat bot is like when you have to type. I'm saying it's a voice chat. 
+
+ 
+Harshit Rajgarhia   5:47 
+No, no. When I say chatbot, it means it has voice enabled features also. Now you can just, I mean just interact using voice in cloud as well. You don't have to type anything, yeah. 
+
+ 
+Mukherji, Abhishek   5:54 
+OK. 
+Yeah, yeah, yeah. So, so that's what I'm, that's what I'm envisioning. So I don't know what are our options. I don't know what are our options, but you tell me. Hmm. 
+
+ 
+Harshit Rajgarhia   6:04 
+So it's a platform, OK, so because when I envision. 
+Yeah, because when I envision a digest, it's a Word document PDF document. When I envision an audio book, it's like an MP3 file or some wave file. But when you envision an interactive audio book, it has to be an. 
+Chatbot agent with voice enabled feature. That's so that is the form. OK, now how? 
+How susceptible they are to this form? They're gonna open this app and do interactions, something like that. So will will users do that? 
+
+ 
+Mukherji, Abhishek   6:55 
+Sorry, what what are you asking? Is it like how will the users do it? 
+
+ 
+Harshit Rajgarhia   7:00 
+Yeah, they will just open this app and maybe upload a digest and ask questions. Are you? 
+
+ 
+Mukherji, Abhishek   7:04 
+Hmm. 
+No, you don't even have to upload because it will be the latest digest, right? So say for example, they will get a list of digest with the latest one on the top. They can actually click on that and then start. So I'm Harshit, I'm actually, yeah, yeah, go ahead, Devaraj. 
+
+ 
+Harshit Rajgarhia   7:12 
+Yes. 
+Yeah, yeah, yeah. 
+
+ 
+Mukherji, Abhishek   7:27 
+Good. 
+
+ 
+Devaraj, Agulla   7:28 
+Yeah, yes, Abhishek. 
+So I'll share my screen. Yeah, like tell me like what this is the expectation. 
+
+ 
+Mukherji, Abhishek   7:39 
+Mhm. 
+
+ 
+Devaraj, Agulla   7:41 
+So. 
+
+ 
+Mukherji, Abhishek   7:44 
+Hmm. 
+
+ 
+Devaraj, Agulla   7:45 
+Been able to see my screen right? 
+
+ 
+Mukherji, Abhishek   7:47 
+Yeah, yeah, yeah. Able to see now. 
+
+ 
+Harshit Rajgarhia   7:48 
+Yes. 
+
+ 
+Devaraj, Agulla   7:50 
+So yeah, here is a section based on like previous conversations happened. Here is a section I have added like audio digest and when we turn on interactive mode for this digest it will like kind of enable conversation. 
+
+ 
+Harshit Rajgarhia   8:05 
+Yeah, that's that's all we're looking. 
+
+ 
+Devaraj, Agulla   8:08 
+This is the expectation, right? 
+
+ 
+Mukherji, Abhishek   8:09 
+So one one import. 
+
+ 
+Harshit Rajgarhia   8:09 
+But can you ask questions? 
+
+ 
+Devaraj, Agulla   8:14 
+Right now it is not tenable. This is from look and feel perspective. Yeah, yeah, I want to ask this. 
+
+ 
+Rathlavath, Ramesh nayak   8:16 
+No, no. So Harshit that is then based on based on the morning conversation with Abhishek Harshit we we came up with this to confirm if this is your expectation so that we can. 
+
+ 
+Mukherji, Abhishek   8:28 
+Actually this is a good, this is a good enhancement already quite honestly if but but one important thing is that if it is like a 20 page thing right, nobody would have time to go through those 20 pages. 
+
+ 
+Harshit Rajgarhia   8:32 
+Yeah. 
+
+ 
+Rathlavath, Ramesh nayak   8:32 
+Um. 
+Yeah. 
+Exactly, yeah. 
+
+ 
+Devaraj, Agulla   8:44 
+Yeah, understood. 
+
+ 
+Mukherji, Abhishek   8:44 
+Right. Listening to 20 pages. So can can you run and how long is this the current one? Can we actually? 
+
+ 
+Rathlavath, Ramesh nayak   8:50 
+No, no, no, no, no. Abhishek just it is the back end is not done for that. Yeah, it is a mock up for now and only the front end only done back up is not back end is not integrated, yeah. 
+
+ 
+Devaraj, Agulla   8:52 
+Yeah. 
+
+ 
+Mukherji, Abhishek   8:53 
+It's a mock up. 
+OK, that's fine, that's fine. But but say for example your one PDF, how long is that PDF is what I'm asking. 
+
+ 
+Rathlavath, Ramesh nayak   9:06 
+Yeah, so that again for this hackathon purpose we have done 4 to it is 9 pages. But here is what our question is. If it are doing for the personal level, then all of the sections will not be included in that, right? So any of this. 
+
+ 
+Mukherji, Abhishek   9:18 
+No, no, actually, actually we should separate out the persona level thing. The persona level has nothing to do with digest as Harshit clearly separated it out, right. The persona level is like an interactive chat that is not on your PDF. It is actually going out like you'll have a. 
+
+ 
+Harshit Rajgarhia   9:27 
+Yes. 
+
+ 
+Mukherji, Abhishek   9:38 
+Deep research agent in the back end of that. Go ahead, Harshit. 
+
+ 
+Harshit Rajgarhia   9:39 
+Yeah. 
+
+ 
+Rathlavath, Ramesh nayak   9:40 
+OK. 
+
+ 
+Harshit Rajgarhia   9:42 
+So yeah, let's just use this screen. When you say chat screen, let's use this screen and have a toggle for voice mode. 
+
+ 
+Rathlavath, Ramesh nayak   9:49 
+Click on. 
+OK. 
+
+ 
+Harshit Rajgarhia   9:55 
+Rather than a separate screen for audio, yeah. 
+
+ 
+Devaraj, Agulla   9:55 
+So. 
+What did I just? 
+
+ 
+Rathlavath, Ramesh nayak   9:59 
+Open. 
+So you're saying that this voice would be based on the complete digest, independent of the persona, right? 
+
+ 
+Mukherji, Abhishek   10:12 
+The voice, let's keep it for the digest and and this AI. I mean firstly like Harshit, I mean let's try to tackle these two problems separately is what I'm trying to say. Hmm. 
+
+ 
+Harshit Rajgarhia   10:12 
+Let can we? Yes. 
+Yeah. 
+Yes, that's what I'm saying. Dave and Ramesh, forget persona. Remove persona from your brain. OK, we'll tackle it later. 
+
+ 
+Rathlavath, Ramesh nayak   10:29 
+Yes, OK. OK. 
+
+ 
+Devaraj, Agulla   10:34 
+OK. 
+
+ 
+Rathlavath, Ramesh nayak   10:35 
+OK. 
+
+ 
+Harshit Rajgarhia   10:37 
+Let's not talk persona in this problem, OK? 
+
+ 
+Rathlavath, Ramesh nayak   10:39 
+OK. 
+
+ 
+Mukherji, Abhishek   10:40 
+Yeah. And I'll tell you the reason very quickly and we'll move, move forward, right. The reason is Vasu wanted this digest and Vasu in Vasu's mind, there is no this personas and all that so far, right? 
+
+ 
+Rathlavath, Ramesh nayak   10:46 
+Yeah. 
+OK, OK. 
+
+ 
+Mukherji, Abhishek   10:55 
+But we are thinking ahead. We are thinking ahead that what Vicky will need is different from what like Rimi will need will be different from what Vasu will need and is different from what Harshit and I need. 
+From this digest, right? And that's exactly why there is no one-size-fits all and that's why we will tackle that later. 
+
+ 
+Rathlavath, Ramesh nayak   11:11 
+Got it. Got it. 
+
+ 
+Harshit Rajgarhia   11:11 
+Yeah, yeah. Just imagine, yeah. 
+Yeah, just just imagine there is a digest. 
+
+ 
+Rathlavath, Ramesh nayak   11:18 
+OK. Thank you. 
+
+ 
+Mukherji, Abhishek   11:19 
+OK, now let's come to the yeah, yeah, right. 
+
+ 
+Rathlavath, Ramesh nayak   11:22 
+OK. 
+
+ 
+Harshit Rajgarhia   11:23 
+In in both PDF and audiobook mode and there's an interactive chat interface where user can interact both in text and voice mode. 
+
+ 
+Rathlavath, Ramesh nayak   11:36 
+OK. 
+
+ 
+Harshit Rajgarhia   11:36 
+To be very simple and clear, is that the expectation? 
+
+ 
+Rathlavath, Ramesh nayak   11:45 
+Yes, uh, sorry, you are asking this. 
+
+ 
+Harshit Rajgarhia   11:48 
+Yeah, I mean, is like Abhishek, are we aligned on that? Is that the first goal we can target? 
+
+ 
+Mukherji, Abhishek   11:53 
+So tell me, tell me again, what are you saying? 
+
+ 
+Harshit Rajgarhia   11:57 
+So for let's say for every day, OK, there will be a news aggregator. OK, we project that news aggregator in terms of digest. Digest can be both in like a PDF mode and a audio book mode. OK, that is 11 pass. The second pass is. 
+
+ 
+Mukherji, Abhishek   12:00 
+Hmm. 
+
+ 
+Harshit Rajgarhia   12:17 
+An interactive chat interface where users can interact about that digest both in chat form and voice form. 
+
+ 
+Mukherji, Abhishek   12:30 
+Um. 
+Yeah, that is good. That's a first good enhancement, Harshit. 
+
+ 
+Devaraj, Agulla   12:33 
+Yeah. 
+
+ 
+Harshit Rajgarhia   12:34 
+Yeah, so they have already. 
+
+ 
+Devaraj, Agulla   12:35 
+So. 
+
+ 
+Harshit Rajgarhia   12:37 
+Yes, because they have already created digest in text form. OK, what now they have to do is just project that digest into voice form in an audio book and 2nd is work on the interface where users can interact about a digest or things beyond that that that digest. 
+
+ 
+Devaraj, Agulla   12:38 
+Yeah. 
+
+ 
+Harshit Rajgarhia   12:57 
+Both in a chat and a voice form. 
+
+ 
+Rathlavath, Ramesh nayak   13:00 
+Yeah, OK, here one question Harshit. So when you are saying that that you digest is already in the PDF format, no. So when you are saying that, keep it in the audio as well. So before interaction interacting itself, you want us to make that PDF format in a voice in MOV format previously itself audio. 
+
+ 
+Harshit Rajgarhia   13:15 
+Yes. 
+As an audio book, as in, yeah, as yes, an audio book, because yeah. 
+
+ 
+Rathlavath, Ramesh nayak   13:22 
+OK, so before, OK, before the interaction itself is what you're talking. 
+
+ 
+Harshit Rajgarhia   13:27 
+It's just like a voice. It's just like an audio form of a book. OK, you you you have audio books right in Amazon Audible and stuff right of books. So it's just an audio book of your digest. 
+
+ 
+Rathlavath, Ramesh nayak   13:30 
+Summary on under phone, yeah. 
+
+ 
+Devaraj, Agulla   13:35 
+OK. 
+
+ 
+Rathlavath, Ramesh nayak   13:36 
+Yes, yes, understood. 
+
+ 
+Harshit Rajgarhia   13:40 
+OK, so that if if if people are driving, they don't have time to read, they can just plug into the audio book and read that Daily News aggregator. 
+
+ 
+Rathlavath, Ramesh nayak   13:40 
+OK, got it. 
+Understood, understood, understood. 
+
+ 
+Harshit Rajgarhia   13:52 
+OK. And then if they want to go ahead and discuss more, they'll open the chat interface and just keep interacting with the chat interface in terms of either text or voice. 
+
+ 
+Rathlavath, Ramesh nayak   13:52 
+Yeah, OK. 
+Yeah, OK, here the question is the chart interaction is based on that selected digest. Am I correct? 
+
+ 
+Harshit Rajgarhia   14:12 
+No, it it no, no. It will go beyond that as well. So it has to be. 
+
+ 
+Rathlavath, Ramesh nayak   14:16 
+No, no, no, no, no. I'm saying by when I say mean it, it may get started from that and we have to go deep in the apart from that PDF. That's what the reference will be starting is the digest. That's what I'm asking. 
+
+ 
+Harshit Rajgarhia   14:27 
+Yeah, yeah, starting starting reference will be digest. 
+
+ 
+Rathlavath, Ramesh nayak   14:31 
+Yes, based on that, if they're asking more questions, we'll be having independent deep search agents so that we'll we can. 
+
+ 
+Harshit Rajgarhia   14:33 
+Yeah, yeah, but but but the context will expand based on what the user is asking. OK. 
+
+ 
+Rathlavath, Ramesh nayak   14:41 
+Yes, yes, understood. 
+
+ 
+Harshit Rajgarhia   14:44 
+OK, let's keep this this as a initial target. Once we do this, let's develop persona on top of it. 
+
+ 
+Rathlavath, Ramesh nayak   14:46 
+OK. 
+OK, after this let go to the person is what you are saying. 
+
+ 
+Harshit Rajgarhia   14:55 
+Yeah, so keep things loosely coupled. When you develop solutions, do everything loosely coupled, OK? 
+
+ 
+Rathlavath, Ramesh nayak   15:01 
+OK. OK. Yeah. 
+
+ 
+Devaraj, Agulla   15:03 
+Yeah, understood. 
+So to summarize this like we need. 
+
+ 
+Mukherji, Abhishek   15:08 
+And actually Harshit, one more thing I want to add here. Sorry, I mean I'm, I'm, I may be adding confusion here, but how audiobooks are narrated, there is a specific style. I don't know Harshit of that style because. 
+
+ 
+Harshit Rajgarhia   15:22 
+1111 It can be done through 11 labs. 
+
+ 
+Mukherji, Abhishek   15:24 
+Yeah. 
+211 labs, right? Yeah, because because see people who are used to doing audio books, right? They are and and the very interesting thing what you can do is it'll be a very cool factor and it does not require much than like changing some APIs, right? Essentially it's like a configuration. 
+
+ 
+Harshit Rajgarhia   15:28 
+Yeah, yeah. 
+
+ 
+Mukherji, Abhishek   15:46 
+How do you want my reader to be right? Do you? What persona, right? You do want like a American accent, whatever this kind of a person versus like a? 
+
+ 
+Harshit Rajgarhia   15:47 
+Yes. 
+
+ 
+Rathlavath, Ramesh nayak   15:50 
+Yes. 
+
+ 
+Mukherji, Abhishek   16:01 
+Some some other, right? I'm I'm just saying. 
+
+ 
+Rathlavath, Ramesh nayak   16:04 
+Yeah, yeah, you are saying it is like. 
+
+ 
+Mukherji, Abhishek   16:05 
+So that I'm pretty sure Harshit, there is we can set this right in the 11 laps. 
+
+ 
+Harshit Rajgarhia   16:05 
+Yeah, J. 
+Yeah, we can set this that's that's not it. We can see this is these are very small low hanging fruits Abhishek. So first we very, very impactful. I mean see to give an analogy when you select your Siri. 
+
+ 
+Mukherji, Abhishek   16:16 
+Yeah, but actually very impactful in my opinion. 
+
+ 
+Harshit Rajgarhia   16:26 
+You select whether you want a male voice or a female voice. 
+
+ 
+Mukherji, Abhishek   16:30 
+Yeah, exactly, exactly. That's what. That's exactly what I'm saying. That say, for example, Vicky would Vicky would like to have like a Chinese accent kind of a thing. Why not, right? We I would prefer a Indian accent, yeah. 
+
+ 
+Harshit Rajgarhia   16:34 
+Yeah, I can. 
+Yeah, yeah. I mean, that can be done. Yeah, that can be done. But yeah, we can give 10-5 or 10 presets. OK, Choi presets. 
+
+ 
+Mukherji, Abhishek   16:45 
+So something like that. 
+Yeah, yeah, let's do that. Let's do that. 
+
+ 
+Harshit Rajgarhia   16:58 
+OK, but let's right now work with only two presets because now I want to focus on the solution mode, which is how good the interface, the chat interfaces or voice interfaces propagating. 
+Because it will have some latency issues, it will have some other relevance issues and stuff like that. 
+
+ 
+Devaraj, Agulla   17:20 
+Yeah. 
+
+ 
+Harshit Rajgarhia   17:21 
+OK. 
+
+ 
+Rathlavath, Ramesh nayak   17:22 
+OK, yeah, one question here is that before that we have admin kind of a dashboard completely. So how do you want it to proceed? Like shall we create a separate user mode here based on the configuration we'll go in our separate chart window. 
+I uh. 
+
+ 
+Harshit Rajgarhia   17:38 
+Go go to the dashboard. 
+Show me where user will see their digest. 
+
+ 
+Rathlavath, Ramesh nayak   17:47 
+That, uh, downloaded PDF above, right? Yeah, here are. 
+
+ 
+Harshit Rajgarhia   17:52 
+No, yeah, well 
+No, if I let's let's say someone is opening this, this whole thing for the very first time and they want to see today's digest where it they will see. 
+
+ 
+Rathlavath, Ramesh nayak   18:08 
+Yeah, this one. So last one is the right, the top of the. 
+
+ 
+Harshit Rajgarhia   18:11 
+Yeah, user doesn't know what is run, so you have to make it a bit more non-technical and user friendly. 
+
+ 
+Rathlavath, Ramesh nayak   18:18 
+OK. 
+OK. 
+
+ 
+Harshit Rajgarhia   18:22 
+OK then when they when they see the digest, OK you can have like a PDF kind of thing icon, you can have a audio book kind of icon and then you can have a you you can have a screen called interact. OK then if the user clicks interact. 
+
+ 
+Rathlavath, Ramesh nayak   18:23 
+Yeah. 
+I. 
+
+ 
+Harshit Rajgarhia   18:41 
+They will. It will directly redirect to the interface. That's what I'm envisioning. 
+
+ 
+Rathlavath, Ramesh nayak   18:47 
+OK. 
+
+ 
+Mukherji, Abhishek   18:50 
+So one more thing, right? You should separate your all of this from what you're presenting to the user. The presentation to the user does not need to have your admin. This is all admin stuff by the way. 
+
+ 
+Harshit Rajgarhia   18:50 
+Yes, obviously. 
+
+ 
+Mukherji, Abhishek   19:05 
+I mean, much of this is admin stuff and the user should not even have access to this admin stuff, right? They should just see. 
+
+ 
+Rathlavath, Ramesh nayak   19:06 
+Yeah. 
+
+ 
+Mukherji, Abhishek   19:17 
+They should just see a very simple kind of an interface and maybe two to three tabs Max, right? Maybe the compare reports is something that they want to do, but can you actually go back to the previous thing that you were showing? Can you go back? 
+Yeah, so you know the tags are a little bit off for me and and I actually saw this in even another, I mean one of the, I mean another presentation had the same issue. 
+So why is this a competitor thing? 
+You see the the open AI form strategic this thing, right? Why is this a competitor? 
+
+ 
+Rathlavath, Ramesh nayak   19:56 
+Sorry, can you come back? 
+Yeah, OK. So this thing for now what happening is that when we are say the competitor agent, we are giving some hardcoded URLs there, assuming that they are the competitor, but that will change for sure. So we would be deciding like who are the competitors, right? And before that we were just supposing that they are the competitor. Let us say we are a. 
+Foundational model company. So that is the reason that we came there. 
+
+ 
+Mukherji, Abhishek   20:25 
+Understood. So this is especially for scientific. So let me actually give you a competitor list. OK, I'll give you the competitor list right away and and basically then and the found and then I'll give you a separate foundation model company list. 
+
+ 
+Rathlavath, Ramesh nayak   20:32 
+Yes, OK. 
+Yes. 
+
+ 
+Mukherji, Abhishek   20:42 
+So please put that, yeah, because right away, right, this looks incorrect to me. I I I mean, I know that you guys, whatever you put in the competitor will show up in the competitor, but but the end purpose is not that OK. 
+
+ 
+Rathlavath, Ramesh nayak   20:42 
+Sure. Yeah, that would help. 
+Yes, yes. So that that was the reason. 
+OK, OK, we'll change that. 
+
+ 
+Harshit Rajgarhia   21:03 
+Yeah, I mean, do a reverse engineering Ramesh and Dave think a new user is coming to your platform. They you should hook them to your platform, OK. 
+
+ 
+Rathlavath, Ramesh nayak   21:14 
+OK. 
+
+ 
+Devaraj, Agulla   21:15 
+Yes, understood, Harshit. 
+
+ 
+Harshit Rajgarhia   21:17 
+Yeah. 
+And we can be your users for the time being if we don't get hooked. 
+
+ 
+Rathlavath, Ramesh nayak   21:28 
+Yeah, I see. Yeah. Coming to the models as we are saying like in the weekend we may work a little more. So we want to get the 11 laps credentials if we have so that we can use straight away because if we ask our managers and then they all they may not available, right. 
+
+ 
+Harshit Rajgarhia   21:31 
+Yeah. 
+
+ 
+Rathlavath, Ramesh nayak   21:47 
+If you have them, can you provide us so that we'll start directly? 
+
+ 
+Harshit Rajgarhia   21:52 
+And I'll I'll I'll I'll see if if we have credits left, I'll give my subscription. 
+
+ 
+Rathlavath, Ramesh nayak   21:57 
+Yeah, and if you can inform to Asif or someone from your team, then that's also good because oftenly inform. 
+
+ 
+Harshit Rajgarhia   22:01 
+Yeah, yeah, I'll just, I'll just inform Asif and you then coordinate, OK. 
+
+ 
+Rathlavath, Ramesh nayak   22:07 
+Yes, yes, that's it. 
+
+ 
+Harshit Rajgarhia   22:08 
+OK. 
+
+ 
+Rathlavath, Ramesh nayak   22:10 
+Yeah. So probably by on Monday, we'll be coming with this first two you're talking about, right? Digest and interactive voice and PTM. 
+
+ 
+Harshit Rajgarhia   22:16 
+Yeah, yeah. See, even if we don't have it in labs credit to start with, use any open source text to speech to use as a placeholder, OK. 
+
+ 
+Rathlavath, Ramesh nayak   22:27 
+OK. 
+OK, but for that the bottleneck for again we need to have the GPU based machines, but we do not have in fact. 
+
+ 
+Harshit Rajgarhia   22:36 
+No, no, this text to speech runs on CPU. 
+
+ 
+Rathlavath, Ramesh nayak   22:41 
+OK, OK. Then we'll actually I'll connect with this with Asif actually and just list her down this vision, sorry, audio related models, I'll connect with. 
+
+ 
+Harshit Rajgarhia   22:50 
+Yeah, yeah, I mean you can. I'll, I'll ask Asif to support wherever he required, OK, because he's he's hands on with voice and audio. He can support wherever required. OK, I'll give him a heads up. 
+
+ 
+Rathlavath, Ramesh nayak   22:55 
+Yes, yes, OK. 
+OK. Thank you. Thanks for that. 
+
+ 
+Harshit Rajgarhia   23:07 
+OK. 
+
+ 
+Rathlavath, Ramesh nayak   23:08 
+Yes. 
+That helps actually any suggestions that after that I would if it if it all be done with that and we feel without showing to you we we cannot move forward on that feature and we can focus on others. So which one is the one? 
+
+ 
+Mukherji, Abhishek   23:24 
+Yeah, the other feature I I would say you are three people, right? So can't you like parallelize creating that persona based thing with like one person should focus on that? Oh no. 
+
+ 
+Rathlavath, Ramesh nayak   23:33 
+No one is we we one person under Mahesh is that actually he's under Leela Krishna, so he has some strict instruction to not focus much on this. I mean his own project has to focus more. 
+So he cannot support that much and so we are the only two maybe playing the major role on this. 
+
+ 
+Mukherji, Abhishek   23:57 
+OK. 
+
+ 
+Rathlavath, Ramesh nayak   24:00 
+Yeah. 
+But we'll try, we'll try to achieve as quickly as we can to edit the your guidance and solution in places, right? So it's a implementing and then a little bit of modification in our own thoughts by adding your solutions. 
+
+ 
+Harshit Rajgarhia   24:11 
+Yeah. 
+Yeah, that should not be an issue, Abhishek, because we can, we can release these in like versions version like 1.01.0.1 things like that keep enhancing, but the basic version should be good enough at least. 
+
+ 
+Mukherji, Abhishek   24:36 
+OK. 
+
+ 
+Harshit Rajgarhia   24:48 
+OK. 
+
+ 
+Rathlavath, Ramesh nayak   24:49 
+Yeah, thanks for that. Uh, we'll connect on again. 
+
+ 
+Harshit Rajgarhia   24:53 
+Yeah, also we have to trim this meeting to 30 minutes because for me I have other calls after. I mean your 9:00 PM I I have calls at 9:00 PM your time. So I'm free 8:30 to 9:00. 
+IST and 82830 PST. 
+
+ 
+Rathlavath, Ramesh nayak   25:12 
+OK, OK. So as this is the first, we are taking time, but moving forward based on the solution base, we'll be taking 10 minutes for the hour what we have done and 10 minutes for your suggestions, it would work. 
+
+ 
+Harshit Rajgarhia   25:16 
+Yes. 
+Sure. 
+Yeah, yeah, sounds good. And we can definitely connect async and work accordingly. Yeah, yeah. Any final thoughts before we wrap up? 
+
+ 
+Rathlavath, Ramesh nayak   25:28 
+Yes, it's yes, OK, yeah. 
+I don't know. For now we'll try to explore all the thoughts you are given and then we'll come up with implementation and then solute problems if we're having. 
+
+ 
+Mukherji, Abhishek   25:48 
+OK. 
+
+ 
+Rathlavath, Ramesh nayak   25:50 
+Done. 
+
+ 
+Harshit Rajgarhia   25:50 
+OK. 
+
+ 
+Rathlavath, Ramesh nayak   25:52 
+Yeah. Thank you, Ashwin. Thank you. Yeah. 
+
+ 
+Harshit Rajgarhia   25:52 
+I'm getting really excited for this and. 
+
+ 
+Mukherji, Abhishek   25:55 
+Yeah, this is going to be very impactful. You guys have no clue what like you're building. 
+
+ 
+Harshit Rajgarhia   25:59 
+Yeah. 
+
+ 
+Rathlavath, Ramesh nayak   26:02 
+Yeah, we'll we'll try our best to in this. 
+
+ 
+Harshit Rajgarhia   26:02 
+Yeah. 
+
+ 
+Mukherji, Abhishek   26:03 
+Yep. 
+Yeah, perfect. 
+
+ 
+Harshit Rajgarhia   26:06 
+Yeah, see at the at the end, just think of one line. OK, will a user actually digest your application or not? Just keep questioning this because there is there is there are hundreds of solutions. 
+
+ 
+Rathlavath, Ramesh nayak   26:20 
+Correct. 
+
+ 
+Harshit Rajgarhia   26:23 
+But hardly one or two solutions people actually use. OK, so so think of like that. 
+
+ 
+Rathlavath, Ramesh nayak   26:27 
+OK. 
+OK, OK. 
+Yeah. 
+We'll definitely try our best to on the line as well. 
+
+ 
+Harshit Rajgarhia   26:39 
+And. 
+
+ 
+Mukherji, Abhishek   26:40 
+Awesome. 
+
+ 
+Harshit Rajgarhia   26:43 
+Okay. Thanks, Ting. Have a great weekend. 
+
+ 
+Rathlavath, Ramesh nayak   26:43 
+Yeah. OK, then. Thank you. Thank you. Bye. 
+
+ 
+Devaraj, Agulla   26:46 
+Thank you Harshit and thank you Abhishek. 
+
+ 
+Rathlavath, Ramesh nayak   26:48 
+Mm. 
+
+ 
+Mukherji, Abhishek   26:49 
+Thanks. Bye. 
+
+ 
+Rathlavath, Ramesh nayak stopped transcription  q
+
+

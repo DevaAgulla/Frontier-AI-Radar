@@ -33,6 +33,7 @@ class User(Base):
     name              = Column(String(200), nullable=False)
     email             = Column(String(320), nullable=False, unique=True)
     password_hash     = Column(String(256), nullable=True)
+    is_admin          = Column(Boolean, default=False, nullable=False)
     centific_team     = Column(String(100), nullable=True)
     active_persona_id = Column(PG_UUID(as_uuid=True), nullable=True)
     subscribed_at     = Column(DateTime(timezone=False), default=lambda: datetime.now(timezone.utc))
@@ -81,6 +82,10 @@ class Run(Base):
     pdf_content   = Column(LargeBinary, nullable=True)
     persona_id    = Column(PG_UUID(as_uuid=True), nullable=True)
     config        = Column(JSONB, default=dict)
+    # Azure Blob Storage — paths inside the container
+    blob_pdf_path   = Column(Text, nullable=True)     # e.g. Frontier-AI-Radar/digest-20260315-170000/digest.pdf
+    blob_audio_path = Column(Text, nullable=True)     # e.g. Frontier-AI-Radar/digest-20260315-170000/digest_audio.mp3
+    blob_sas_cache  = Column(JSONB, default=dict)     # {"pdf": {"url": "...", "expires_at": "..."}, "audio": {...}}
 
     # Relationships
     extraction = relationship("Extraction", back_populates="runs")

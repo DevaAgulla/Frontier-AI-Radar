@@ -12,6 +12,24 @@ import structlog
 logger = structlog.get_logger()
 
 
+# ── ENTRY ROUTING — chat vs digest ────────────────────────────────────────────
+
+def route_from_start(state: RadarState) -> str:
+    """Route at START: chat request → chat_agent; digest run → mission_controller.
+
+    The presence of ``chat_query`` in state is the signal set by the API layer
+    when a user sends a message.  All digest pipeline runs leave it None.
+    This is the extensibility gate — every new top-level feature (persona, compare,
+    alert) can be added here as a new conditional branch without touching any
+    existing agent.
+    """
+    if state.get("chat_query"):
+        logger.info("route_from_start → chat_agent")
+        return "chat_agent"
+    logger.info("route_from_start → mission_controller (digest run)")
+    return "mission_controller"
+
+
 # ── INTELLIGENCE AGENT ROUTING (mode-based) ──────────────────────────────
 
 ALL_INTEL_AGENTS = [

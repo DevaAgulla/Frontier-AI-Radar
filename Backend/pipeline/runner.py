@@ -87,6 +87,74 @@ def create_initial_state(
         "email_status": "",
         "errors": [],
         "agent_iterations": {},
+        # Chat fields — None during digest runs; populated only on chat requests
+        "messages":        [],
+        "chat_query":      None,
+        "chat_session_id": None,
+        "chat_mode":       None,
+    }
+
+
+def create_chat_initial_state(
+    run_db_id: int,
+    chat_query: str,
+    chat_session_id: str,
+    chat_mode: str = "text",
+) -> RadarState:
+    """Create a minimal RadarState for chat invocations through the unified graph.
+
+    The graph routes to ``chat_agent`` immediately via ``route_from_start`` because
+    ``chat_query`` is set.  All digest-pipeline fields are empty — they are never
+    read on the chat path.
+
+    The ``messages`` list carries the user turn into the chat subgraph.  LangGraph
+    passes only the shared ``messages`` key to the inner ``create_react_agent``
+    subgraph; all other fields stay in the parent state untouched.
+    """
+    from langchain_core.messages import HumanMessage
+
+    # Prefix with run_db_id so the chat agent knows which digest to load
+    user_content = f"[Digest Run ID: {run_db_id}]\n{chat_query}"
+
+    return {
+        "run_id":             f"run_{run_db_id}",
+        "run_mode":           "chat",
+        "run_db_id":          run_db_id,
+        "selected_agents":    [],
+        "mission_goal":       "",
+        "strategy_plan":      {},
+        "since_timestamp":    "",
+        "config":             {},
+        "custom_urls":        [],
+        "url_mode":           "default",
+        "extraction_db_id":   0,
+        "discovered_sources": [],
+        "trend_signals":      [],
+        "competitor_findings":[],
+        "provider_findings":  [],
+        "research_findings":  [],
+        "hf_findings":        [],
+        "verification_tasks": [],
+        "verification_verdicts": [],
+        "merged_findings":    [],
+        "ranked_findings":    [],
+        "email_recipients":   [],
+        "digest_json":        {},
+        "digest_markdown":    "",
+        "digest_needs_rewrite": False,
+        "pdf_path":           "",
+        "email_status":       "",
+        "errors":             [],
+        "agent_iterations":   {},
+        "persona_id":         None,
+        "persona_prompt":     None,
+        "suggested_questions": None,
+        # Shared channel — LangGraph passes this into the chat subgraph
+        "messages":           [HumanMessage(content=user_content)],
+        # Routing trigger
+        "chat_query":         chat_query,
+        "chat_session_id":    chat_session_id,
+        "chat_mode":          chat_mode,
     }
 
 
@@ -209,8 +277,11 @@ async def execute_prepared_radar(initial_state: RadarState) -> RadarState:
     checkpointer = await _build_checkpointer()
     graph = create_radar_graph(checkpointer=checkpointer)
 
-    # thread_id namespaces the checkpoint so each run has its own state history
-    invoke_config = {"configurable": {"thread_id": run_id}}
+    # thread_id = "run_{run_db_id}" — deterministic, integer-derived so the chat
+    # agent can reconstruct it from run_db_id without any DB lookup.
+    thread_id = f"run_{run_db_id}" if run_db_id else run_id
+    invoke_config = {"configurable": {"thread_id": thread_id}}
+    logger.info("LangGraph digest thread", thread_id=thread_id, run_db_id=run_db_id)
 
     try:
         final_state = await graph.ainvoke(initial_state, config=invoke_config)
@@ -236,6 +307,18 @@ async def execute_prepared_radar(initial_state: RadarState) -> RadarState:
             errors_count=len(final_state.get("errors", [])),
             elapsed_seconds=elapsed,
         )
+
+        # ── Post-run: generate audio + upload PDF/audio to Azure Blob ──
+        # Runs after the pipeline and DB update — failures here never
+        # affect the run status returned to the caller.
+        pdf_path = final_state.get("pdf_path", "")
+        if pdf_path:
+            try:
+                from storage.post_run import post_run_upload
+                await post_run_upload(pdf_path, run_db_id)
+            except Exception as _e:
+                logger.warning("post_run_upload raised unexpectedly", error=str(_e))
+
         return final_state
 
     except Exception as e:

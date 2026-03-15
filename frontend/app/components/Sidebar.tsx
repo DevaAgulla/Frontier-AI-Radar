@@ -14,7 +14,7 @@ export function useSidebarWidth() {
   return useContext(SidebarWidthContext);
 }
 
-const NAV_ITEMS: { label: string; href: string; icon: "dashboard" | "pipeline" | "config" | "scheduler" | "sources" | "runs" | "findings" | "compare" | "archive" }[] = [
+const NAV_ITEMS: { label: string; href: string; icon: "dashboard" | "pipeline" | "config" | "scheduler" | "sources" | "runs" | "findings" | "compare" | "archive" | "digest" }[] = [
   { label: "Dashboard", href: "/", icon: "dashboard" },
   { label: "Build Report", href: "/run", icon: "pipeline" },
   { label: "Competitor report", href: "/config", icon: "config" },
@@ -24,6 +24,7 @@ const NAV_ITEMS: { label: string; href: string; icon: "dashboard" | "pipeline" |
   { label: "Runs", href: "/runs", icon: "runs" },
   { label: "Findings", href: "/findings", icon: "findings" },
   { label: "Archive", href: "/archive", icon: "archive" },
+  { label: "User View", href: "/digest", icon: "digest" },
 ];
 
 function NavIcon({ name, active }: { readonly name: string; readonly active: boolean }) {
@@ -90,6 +91,13 @@ function NavIcon({ name, active }: { readonly name: string; readonly active: boo
           <circle cx="16" cy="12" r="3" />
           <path d="M11 12h2" />
           <path d="M8 9V6M16 18v-3" />
+        </svg>
+      );
+    case "digest":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
         </svg>
       );
     default:
