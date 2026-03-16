@@ -154,7 +154,7 @@ async def model_intel_agent(state: RadarState) -> RadarState:
         # ── Default / Append: fetch from standard 12+ provider sources ─
         if url_mode in ("default", "append"):
             releases = await fetch_foundation_model_releases_tool.ainvoke(
-                {"target_date": ""}  # defaults to today
+                {"target_date": "", "since_days": 7}  # look back 7 days; delta detection removes already-seen
             )
             if not isinstance(releases, list):
                 releases = []
@@ -187,11 +187,35 @@ async def model_intel_agent(state: RadarState) -> RadarState:
             num_releases=len(releases),
         )
 
-        # Read previous snapshots from memory for diff context
-        prev_snapshots = await read_memory.ainvoke({
+        # Read previous snapshots from memory for delta detection
+        prev_snapshots_raw = await read_memory.ainvoke({
             "type": "long_term",
             "key": "model_provider_snapshots",
         })
+        # Build set of already-seen model names (case-insensitive) for dedup
+        prev_snapshots: dict = {}
+        if isinstance(prev_snapshots_raw, dict):
+            prev_snapshots = prev_snapshots_raw
+        elif isinstance(prev_snapshots_raw, str):
+            try:
+                prev_snapshots = json.loads(prev_snapshots_raw)
+            except Exception:
+                prev_snapshots = {}
+
+        seen_model_keys: set[str] = {k.lower() for k in prev_snapshots.keys()}
+
+        # Delta detection: filter out releases already seen in previous runs
+        new_releases = [
+            r for r in releases
+            if (r.get("model_name") or "").lower() not in seen_model_keys
+        ]
+        delta_filtered = len(releases) - len(new_releases)
+        if delta_filtered > 0:
+            logger.info(
+                "Model Intel: delta detection — filtered %d already-seen releases, %d new",
+                delta_filtered, len(new_releases),
+            )
+        releases = new_releases if new_releases else releases  # fall back to all if everything is "seen"
 
         # If no releases found, still produce a minimal output
         if not releases or (isinstance(releases, list) and len(releases) == 0):
@@ -228,9 +252,9 @@ async def model_intel_agent(state: RadarState) -> RadarState:
 
         user_prompt = (
             f"Analyze these {len(releases_for_prompt)} foundation model releases "
-            f"detected today from provider sources:\n\n"
+            f"detected today from provider sources (already filtered to NEW releases only):\n\n"
             f"--- RELEASES JSON ---\n{json.dumps(releases_for_prompt, indent=2)}\n--- END ---\n\n"
-            f"Previous known models snapshot: {json.dumps(prev_snapshots)}\n"
+            f"Previously seen models (already reported): {json.dumps(list(seen_model_keys)[:50])}\n"
             f"Since date: {since}\n"
             f"Strategy guidance: {json.dumps(strategy.get('agent_instructions', {}).get('model_intel', ''))}\n\n"
             "IMPORTANT: If ANY provider claims SOTA on a benchmark, you MUST call "
