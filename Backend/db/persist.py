@@ -329,47 +329,34 @@ def update_run_blob_paths(
 
 def seed_default_competitors() -> None:
     """
-    Upsert the pre-defined competitor sources by name.
+    Insert the pre-defined competitor sources if the table is empty.
 
-    Idempotent — safe to call on every startup.  Adds any sources from
-    _DEFAULT_COMPETITORS that are not already present (by name), so new
-    entries added to the list appear in the DB on the next startup without
-    wiping existing user-added sources.
+    Idempotent — safe to call on every startup.
+    Note: setup_db.py already seeds these on first deploy.
     """
-    _DEFAULT_COMPETITORS = [
-        {"name": "OpenAI Blog",           "url": "https://openai.com/blog/rss.xml",          "source_type": "rss",     "selector": None},
-        {"name": "Anthropic News",        "url": "https://www.anthropic.com/index.xml",       "source_type": "rss",     "selector": None},
-        {"name": "Google AI Updates",     "url": "https://ai.google.dev/updates",              "source_type": "webpage", "selector": ".update-item"},
-        {"name": "Google DeepMind Blog",  "url": "https://deepmind.google/blog/rss.xml",      "source_type": "rss",     "selector": None},
-        {"name": "Hugging Face Blog",     "url": "https://huggingface.co/blog/rss.xml",       "source_type": "rss",     "selector": None},
-        {"name": "Meta AI Blog",          "url": "https://ai.meta.com/blog/rss/",             "source_type": "rss",     "selector": None},
-        {"name": "Mistral AI News",       "url": "https://mistral.ai/news/",                  "source_type": "webpage", "selector": None},
-        {"name": "Cohere Blog",           "url": "https://cohere.com/blog",                   "source_type": "webpage", "selector": None},
-        {"name": "Together AI Blog",      "url": "https://www.together.ai/blog",              "source_type": "webpage", "selector": None},
-        {"name": "Groq Blog",             "url": "https://groq.com/blog",                     "source_type": "webpage", "selector": None},
-        {"name": "Perplexity Blog",       "url": "https://blog.perplexity.ai/",               "source_type": "webpage", "selector": None},
-    ]
-
     with get_session() as session:
-        existing_names = {row.name for row in session.query(Competitor.name).all()}
-        added = 0
+        count = session.query(Competitor).count()
+        if count > 0:
+            logger.info("DB: competitors table already seeded", count=count)
+            return
+
+        _DEFAULT_COMPETITORS = [
+            {"name": "OpenAI Blog",       "url": "https://openai.com/blog/rss.xml",      "source_type": "rss",     "selector": None},
+            {"name": "Anthropic News",    "url": "https://www.anthropic.com/index.xml",  "source_type": "rss",     "selector": None},
+            {"name": "Google AI Updates", "url": "https://ai.google.dev/updates",         "source_type": "webpage", "selector": ".update-item"},
+        ]
         for src in _DEFAULT_COMPETITORS:
-            if src["name"] not in existing_names:
-                session.add(Competitor(
-                    name=src["name"],
-                    url=src["url"],
-                    source_type=src["source_type"],
-                    selector=src.get("selector"),
-                    is_default=True,
-                    is_active=True,
-                    added_by=None,
-                ))
-                added += 1
-        if added:
-            session.commit()
-            logger.info("DB: added missing default competitors", added=added)
-        else:
-            logger.info("DB: all default competitors already present")
+            session.add(Competitor(
+                name=src["name"],
+                url=src["url"],
+                source_type=src["source_type"],
+                selector=src.get("selector"),
+                is_default=True,
+                is_active=True,
+                added_by=None,
+            ))
+        session.commit()
+        logger.info("DB: seeded default competitors", count=len(_DEFAULT_COMPETITORS))
 
 
 def get_competitors(active_only: bool = True) -> List[Dict[str, Any]]:
