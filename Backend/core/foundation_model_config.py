@@ -36,8 +36,10 @@ PER_PAGE: int = 100
 # ---------------------------------------------------------------------------
 
 SOURCE_URLS: list[str] = [
-    # HuggingFace — one URL per trusted org using ?author= so the global noisy
-    # feed is bypassed entirely. Pages are 0-indexed (&p=0 is most recent).
+    # HuggingFace — one URL per trusted org using sort=lastModified so recently
+    # active repos appear first AND both createdAt + lastModified are populated
+    # in the response (sort=createdAt leaves lastModified=null).
+    # Pages are 0-indexed (&p=0 is most recent).
     "https://huggingface.co/api/models?author=meta-llama&sort=lastModified&limit=100",
     "https://huggingface.co/api/models?author=mistralai&sort=lastModified&limit=100",
     "https://huggingface.co/api/models?author=Qwen&sort=lastModified&limit=100",
@@ -56,14 +58,18 @@ SOURCE_URLS: list[str] = [
     # Google DeepMind blog RSS
     "https://deepmind.google/blog/rss.xml",
 
-    # GitHub releases for openai-python SDK (JSON API)
-    "https://api.github.com/repos/openai/openai-python/releases?per_page=100",
+    # NVIDIA developer blog RSS — covers NIM / foundation model announcements
+    "https://developer.nvidia.com/blog/feed/",
 
-    # NOTE — the following providers do not expose a public RSS feed or
-    # date-queryable API as of 2026-03. They are excluded from defaults:
+    # GitHub model announcements: openai-cookbook (model-level notes, not SDK bumps)
+    "https://api.github.com/repos/openai/openai-cookbook/releases?per_page=100",
+
+    # NOTE — the following providers do not expose a reliable public RSS feed
+    # or date-queryable API as of 2026-03:
     #   Meta AI   : https://ai.meta.com/blog/rss/   -> 404
     #   Mistral AI: https://mistral.ai/news/rss.xml  -> 404, sitemap has no <lastmod>
     #   Cohere    : https://cohere.com/blog/rss.xml  -> redirects to HTML
+    #   AI21      : https://www.ai21.com/blog/rss    -> unreliable
 ]
 
 # ---------------------------------------------------------------------------
@@ -72,15 +78,16 @@ SOURCE_URLS: list[str] = [
 # ---------------------------------------------------------------------------
 
 PROVIDER_MAP: dict[str, str] = {
-    "openai.com":      "OpenAI",
-    "anthropic.com":   "Anthropic",
-    "deepmind.google": "Google DeepMind",
-    "ai.meta.com":     "Meta AI",
-    "mistral.ai":      "Mistral AI",
-    "cohere.com":      "Cohere",
-    "huggingface.co":  "HuggingFace",
-    "api.github.com":  "GitHub",
-    "github.com":      "GitHub",
+    "openai.com":         "OpenAI",
+    "anthropic.com":      "Anthropic",
+    "deepmind.google":    "Google DeepMind",
+    "ai.meta.com":        "Meta AI",
+    "mistral.ai":         "Mistral AI",
+    "cohere.com":         "Cohere",
+    "huggingface.co":     "HuggingFace",
+    "developer.nvidia":   "NVIDIA",
+    "api.github.com":     "GitHub",
+    "github.com":         "GitHub",
 }
 
 # ---------------------------------------------------------------------------
@@ -89,15 +96,16 @@ PROVIDER_MAP: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 SOURCE_LABELS: dict[str, str] = {
-    "openai.com":      "openai_rss",
-    "anthropic.com":   "anthropic_sitemap",
-    "deepmind.google": "deepmind_rss",
-    "ai.meta.com":     "meta_rss",
-    "mistral.ai":      "mistral_rss",
-    "cohere.com":      "cohere_rss",
-    "huggingface.co":  "huggingface_api",
-    "api.github.com":  "github_api",
-    "github.com":      "github_api",
+    "openai.com":         "openai_rss",
+    "anthropic.com":      "anthropic_sitemap",
+    "deepmind.google":    "deepmind_rss",
+    "ai.meta.com":        "meta_rss",
+    "mistral.ai":         "mistral_rss",
+    "cohere.com":         "cohere_rss",
+    "huggingface.co":     "huggingface_api",
+    "developer.nvidia":   "nvidia_rss",
+    "api.github.com":     "github_api",
+    "github.com":         "github_api",
 }
 
 # ---------------------------------------------------------------------------
