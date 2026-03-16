@@ -60,6 +60,15 @@ async def _generate_audio(pdf_path: Path) -> Optional[Path]:
 
     Returns the Path to the saved MP3, or None if skipped / unavailable.
     """
+    # Check feature flag first
+    try:
+        from config.settings import settings
+        if not settings.enable_elevenlabs:
+            logger.info("post_run_upload: ElevenLabs disabled (ENABLE_ELEVENLABS=0) — skipping audio")
+            return None
+    except Exception:
+        pass
+
     # Resolve API key: voice/config.env takes priority over .env
     api_key = _resolve_elevenlabs_key()
     if not api_key:
