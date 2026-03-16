@@ -62,6 +62,8 @@ async def lifespan(app: FastAPI):
     init_db()
     from db.chat import ensure_chat_schema
     ensure_chat_schema()
+    from db.persist import seed_default_competitors
+    seed_default_competitors()
 
     # Start APScheduler only when Celery beat is not running this deployment
     celery_beat_running = False
@@ -674,18 +676,19 @@ async def run_async(req: RunRequest):
         from cache.redis_client import invalidate_digest_cache
         if run_db_id:
             invalidate_digest_cache(run_db_id)
-        (
-            run_digest_pipeline.s(
-                run_db_id=run_db_id,
-                mode=req.mode,
-                since_days=req.since_days,
-                email_recipients=email_recipients,
-                custom_urls=req.urls or [],
-                url_mode=req.url_mode,
-            )
-            | generate_audio_task.s()
-            | upload_blob_task.s()
-        ).apply_async()
+        digest_step = run_digest_pipeline.s(
+            run_db_id=run_db_id,
+            mode=req.mode,
+            since_days=req.since_days,
+            email_recipients=email_recipients,
+            custom_urls=req.urls or [],
+            url_mode=req.url_mode,
+        )
+        if settings.enable_elevenlabs:
+            task_chain = digest_step | generate_audio_task.s() | upload_blob_task.s()
+        else:
+            task_chain = digest_step | upload_blob_task.s()
+        task_chain.apply_async()
         celery_available = True
         logger.info("run_enqueued_celery", run_db_id=run_db_id)
     except Exception as _ce:
@@ -2438,6 +2441,9 @@ async def _make_voice_response(response_text: str, source_urls: List[str]) -> di
     """Generate ElevenLabs audio and return voice response dict."""
     import base64
     audio_b64: Optional[str] = None
+    if not settings.enable_elevenlabs:
+        logger.info("chat_ask_tts_skip", reason="elevenlabs_disabled")
+        return {"response": response_text, "audio_base64": None, "sources": source_urls, "mode": "voice"}
     try:
         from storage.post_run import _resolve_elevenlabs_key
         from voice.generate_voice_digest import (

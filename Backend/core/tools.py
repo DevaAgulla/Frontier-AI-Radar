@@ -217,12 +217,26 @@ async def crawl_page(url: str) -> Dict[str, Any]:
     return await loop.run_in_executor(None, _fetch)
 
 
+def _parse_entry_date(s: str) -> date:
+    """Parse ISO date/datetime string to date. Returns date.min on failure."""
+    if not s:
+        return date.min
+    try:
+        return date.fromisoformat(s[:10])
+    except Exception:
+        return date.min
+
+
 class FetchRssFeedInput(BaseModel):
     url: str = Field(description="The full URL of the RSS or Atom feed to parse")
+    since_date: str = Field(
+        default="",
+        description="ISO date YYYY-MM-DD. Only return entries on or after this date.",
+    )
 
 
 @tool(args_schema=FetchRssFeedInput)
-async def fetch_rss_feed(url: str) -> List[Dict[str, Any]]:
+async def fetch_rss_feed(url: str, since_date: str = "") -> List[Dict[str, Any]]:
     """
     Parse RSS or Atom feed and return list of entries.
     USE THIS FOR: RSS/Atom feeds from blogs, news sites, product changelogs.
@@ -276,13 +290,24 @@ async def fetch_rss_feed(url: str) -> List[Dict[str, Any]]:
             summary = re.sub(r"<[^>]+>", " ", summary).strip()
             summary = re.sub(r"\s+", " ", summary)
 
+            entry_date = _parse_entry_date(raw_date or "")
+            today = date.today()
+            days_ago = (today - entry_date).days if entry_date != date.min else None
+
             entries.append({
                 "title": getattr(entry, "title", "") or "",
                 "link": getattr(entry, "link", "") or "",
                 "published": raw_date or "",
                 "summary": summary[:500],
                 "author": getattr(entry, "author", "") or "",
+                "days_ago": days_ago,
             })
+
+        # Apply date filter and sort newest-first
+        if since_date:
+            cutoff = _parse_entry_date(since_date)
+            entries = [e for e in entries if _parse_entry_date(e["published"]) >= cutoff]
+        entries.sort(key=lambda e: e["published"], reverse=True)
 
         return entries
 
@@ -596,15 +621,24 @@ async def search_web(query: str) -> List[Dict[str, Any]]:
         "score": float
     }
     """
-    # STUB: Team will provide real implementation
-    return [
-        {
-            "title": f"Mock Search Result for: {query}",
-            "url": "https://example.com/mock-result",
-            "snippet": "Mock search result snippet from Tavily API.",
-            "score": 0.85,
-        }
-    ]
+    if not settings.tavily_api_key:
+        return [{"title": "Web search unavailable", "url": "", "snippet": "TAVILY_API_KEY is not configured.", "score": 0.0}]
+    try:
+        from tavily import AsyncTavilyClient  # type: ignore
+        client = AsyncTavilyClient(api_key=settings.tavily_api_key)
+        results = await client.search(query, max_results=5)
+        hits = results.get("results", [])
+        return [
+            {
+                "title": h.get("title", ""),
+                "url": h.get("url", ""),
+                "snippet": h.get("content", ""),
+                "score": h.get("score", 0.0),
+            }
+            for h in hits
+        ]
+    except Exception as exc:
+        return [{"title": "Search error", "url": "", "snippet": str(exc), "score": 0.0}]
 
 
 class CrawlResearchSourcesInput(BaseModel):
@@ -1805,30 +1839,39 @@ class FetchFoundationModelReleasesInput(BaseModel):
     target_date: str = Field(
         default="",
         description=(
-            "Date to filter releases (YYYY-MM-DD format). "
+            "End date for release window (YYYY-MM-DD format). "
             "Leave empty to use today's date (UTC)."
+        ),
+    )
+    since_days: int = Field(
+        default=7,
+        description=(
+            "Number of days to look back from target_date (inclusive). "
+            "1 = today only, 7 = last 7 days (default)."
         ),
     )
 
 
 @tool(args_schema=FetchFoundationModelReleasesInput)
-async def fetch_foundation_model_releases_tool(target_date: str = "") -> List[Dict[str, Any]]:
+async def fetch_foundation_model_releases_tool(target_date: str = "", since_days: int = 7) -> List[Dict[str, Any]]:
     """
-    Fetch today's foundation model releases from 12+ provider sources.
+    Fetch foundation model releases from 12+ provider sources within a date window.
     USE THIS FOR: Getting real-time model release data from OpenAI, Anthropic,
-        Google DeepMind, Meta, Mistral, HuggingFace, and GitHub.
+        Google DeepMind, Meta, Mistral, HuggingFace, xAI, NVIDIA, and GitHub.
     DO NOT USE FOR: Historical research papers (use crawl_research_sources).
     SOURCES QUERIED:
         - HuggingFace API (8 orgs: meta-llama, mistralai, Qwen, google, deepseek-ai, microsoft, openai, anthropic)
         - OpenAI blog RSS feed
         - Anthropic sitemap.xml
         - Google DeepMind blog RSS feed
-        - GitHub releases API (openai-python SDK)
+        - xAI (Grok) blog RSS feed
+        - NVIDIA developer blog RSS feed
+        - GitHub releases API (openai-cookbook)
     RETURNS: List of normalized release dicts, each with:
         model_name, provider, release_date, model_details, modalities,
         context_length, benchmarks, pricing, api_link, model_page,
         github_repo, source.
-    Returns empty list if no releases found for the target date.
+    Returns empty list if no releases found for the target date window.
     """
     from core.foundation_model_releases import fetch_foundation_model_releases
 
@@ -1843,9 +1886,11 @@ async def fetch_foundation_model_releases_tool(target_date: str = "") -> List[Di
     else:
         td = datetime.now(timezone.utc).date()
 
+    since = max(1, since_days)
+
     # Run the synchronous httpx-based fetcher in a thread pool
     def _fetch() -> List[Dict[str, Any]]:
-        return fetch_foundation_model_releases(current_date=td)
+        return fetch_foundation_model_releases(current_date=td, since_days=since)
 
     return await loop.run_in_executor(None, _fetch)
 

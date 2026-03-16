@@ -20,7 +20,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -160,6 +160,11 @@ def _parse_date_value(value: Any) -> date | None:
     return None
 
 
+def _in_date_range(d: date | None, start: date, end: date) -> bool:
+    """Return True when *d* falls within the inclusive [start, end] range."""
+    return d is not None and start <= d <= end
+
+
 # ---------------------------------------------------------------------------
 # HTTP helpers
 # ---------------------------------------------------------------------------
@@ -237,9 +242,9 @@ def _paginate_json(
 # RSS / Atom parsing
 # ---------------------------------------------------------------------------
 
-def _parse_rss(content: bytes, url: str, target_date: date) -> list[dict[str, Any]]:
+def _parse_rss(content: bytes, url: str, start_date: date, end_date: date) -> list[dict[str, Any]]:
     """
-    Parse an RSS/Atom feed and return releases matching *target_date*.
+    Parse an RSS/Atom feed and return releases within [start_date, end_date].
 
     feedparser accepts raw bytes and auto-detects encoding.
     """
@@ -254,7 +259,7 @@ def _parse_rss(content: bytes, url: str, target_date: date) -> list[dict[str, An
             or getattr(entry, "updated_parsed", None)
         )
         entry_date = _parse_date_value(raw_date)
-        if entry_date != target_date:
+        if not _in_date_range(entry_date, start_date, end_date):
             continue
 
         title: str = getattr(entry, "title", "") or ""
@@ -267,7 +272,7 @@ def _parse_rss(content: bytes, url: str, target_date: date) -> list[dict[str, An
         releases.append(_blank_release(
             model_name=title,
             provider=provider,
-            release_date=str(target_date),
+            release_date=str(entry_date),
             model_details=clean_summary[:500] if clean_summary else None,
             model_page=link or None,
             source=source,
@@ -280,10 +285,10 @@ def _parse_rss(content: bytes, url: str, target_date: date) -> list[dict[str, An
 # XML Sitemap parsing (for providers without RSS, e.g. Anthropic)
 # ---------------------------------------------------------------------------
 
-def _parse_sitemap(content: bytes, url: str, target_date: date) -> list[dict[str, Any]]:
+def _parse_sitemap(content: bytes, url: str, start_date: date, end_date: date) -> list[dict[str, Any]]:
     """
     Parse an XML sitemap that contains ``<lastmod>`` timestamps and return
-    releases whose lastmod date matches *target_date*.
+    releases whose lastmod date falls within [start_date, end_date].
 
     Only ``<url>`` entries under a ``/news/`` path (or similar content paths)
     are considered to avoid including static pages like /careers, /about, etc.
@@ -319,7 +324,7 @@ def _parse_sitemap(content: bytes, url: str, target_date: date) -> list[dict[str
             continue
 
         entry_date = _parse_date_value(lastmod)
-        if entry_date != target_date:
+        if not _in_date_range(entry_date, start_date, end_date):
             continue
 
         # Derive a readable title from the URL slug
@@ -329,7 +334,7 @@ def _parse_sitemap(content: bytes, url: str, target_date: date) -> list[dict[str
         releases.append(_blank_release(
             model_name=title,
             provider=provider,
-            release_date=str(target_date),
+            release_date=str(entry_date),
             model_page=loc,
             source=source,
         ))
@@ -341,19 +346,65 @@ def _parse_sitemap(content: bytes, url: str, target_date: date) -> list[dict[str
 # HuggingFace JSON API parsing
 # ---------------------------------------------------------------------------
 
-def _parse_huggingface(items: list[dict], target_date: date) -> list[dict[str, Any]]:
-    """Normalise a list of HuggingFace model records into the common schema."""
+# Derivative model patterns to skip (quantizations, fine-tunes, demos)
+_HF_SKIP_PATTERNS = (
+    "gguf", "bnb", "awq", "gptq", "fp8", "fp4", "int4", "int8",
+    "demo", "test", "finetune", "fine-tune", "lora", "adapter",
+    "merged", "quantiz",
+)
+
+# Block clearly non-model HF repo types (datasets, embedding-only, RL envs, etc.)
+_HF_BLOCKED_PIPELINES = {
+    "reinforcement-learning",
+    "robotics",
+    "tabular-classification",
+    "tabular-regression",
+    "tabular-to-text",
+    "graph-ml",
+}
+
+
+def _is_foundation_model(model_id: str, item: dict) -> bool:
+    """Return True when the HF repo looks like a base/foundation model release.
+
+    Uses a blocklist rather than an allowlist for pipeline_tag so that new
+    pipeline types (e.g. time-series-forecasting) are not silently dropped.
+    """
+    model_id_lower = model_id.lower()
+    if any(p in model_id_lower for p in _HF_SKIP_PATTERNS):
+        return False
+    pipeline: str = (item.get("pipeline_tag") or "").lower()
+    if pipeline in _HF_BLOCKED_PIPELINES:
+        return False
+    return True
+
+
+def _parse_huggingface(items: list[dict], start_date: date, end_date: date) -> list[dict[str, Any]]:
+    """Normalise a list of HuggingFace model records into the common schema.
+
+    Date strategy: use lastModified for the window check (always populated when
+    sort=lastModified is used) so we catch recently-active repos. Store createdAt
+    as extra_information so the LLM can distinguish a true new release (createdAt
+    in window) from an update to an existing model (only lastModified in window).
+    """
     releases: list[dict[str, Any]] = []
 
     for item in items:
+        # Use lastModified for the activity window — it's always populated when
+        # sort=lastModified is used. createdAt is null with sort=createdAt.
         raw_date = item.get("lastModified") or item.get("createdAt")
-        if _parse_date_value(raw_date) != target_date:
+        entry_date = _parse_date_value(raw_date)
+        if not _in_date_range(entry_date, start_date, end_date):
             continue
 
         model_id: str = item.get("modelId") or item.get("id") or ""
         parts = model_id.split("/", 1)
         provider = parts[0] if len(parts) == 2 else "HuggingFace"
         model_name = parts[-1]
+
+        # Fix 2: skip derivative/quantized/demo models
+        if not _is_foundation_model(model_id, item):
+            continue
 
         tags: list[str] = item.get("tags") or []
         pipeline: str = item.get("pipeline_tag") or ""
@@ -366,15 +417,22 @@ def _parse_huggingface(items: list[dict], target_date: date) -> list[dict[str, A
             or config.get("context_length")
         )
 
+        # Provide createdAt so the LLM can tell new release vs update
+        created_at_str = item.get("createdAt") or ""
+        created_date = _parse_date_value(created_at_str)
+        is_new_release = created_date is not None and _in_date_range(created_date, start_date, end_date)
+        extra = f"createdAt={created_at_str}; {'NEW RELEASE' if is_new_release else 'UPDATE to existing model'}"
+
         releases.append(_blank_release(
             model_name=model_name,
             provider=provider,
-            release_date=str(target_date),
+            release_date=str(entry_date),
             model_details=pipeline or None,
             modalities=modalities,
             context_length=str(context_length) if context_length else None,
             model_page=f"https://huggingface.co/{model_id}",
             api_link=f"https://huggingface.co/api/models/{model_id}",
+            extra_information=extra,
             source="huggingface_api",
         ))
 
@@ -400,7 +458,7 @@ def _extract_modalities_from_tags(tags: list[str], pipeline: str) -> list[str]:
 # GitHub Releases JSON API parsing
 # ---------------------------------------------------------------------------
 
-def _parse_github_releases(items: list[dict], url: str, target_date: date) -> list[dict[str, Any]]:
+def _parse_github_releases(items: list[dict], url: str, start_date: date, end_date: date) -> list[dict[str, Any]]:
     """Normalise GitHub releases API items into the common schema."""
     releases: list[dict[str, Any]] = []
 
@@ -409,7 +467,8 @@ def _parse_github_releases(items: list[dict], url: str, target_date: date) -> li
 
     for item in items:
         raw_date = item.get("published_at") or item.get("created_at")
-        if _parse_date_value(raw_date) != target_date:
+        entry_date = _parse_date_value(raw_date)
+        if not _in_date_range(entry_date, start_date, end_date):
             continue
 
         tag: str = item.get("tag_name") or ""
@@ -424,7 +483,7 @@ def _parse_github_releases(items: list[dict], url: str, target_date: date) -> li
         releases.append(_blank_release(
             model_name=name,
             provider=provider,
-            release_date=str(target_date),
+            release_date=str(entry_date),
             model_details=body[:500] if body else None,
             github_repo=f"https://github.com/{repo_path}" if repo_path else None,
             model_page=html_url or None,
@@ -438,7 +497,7 @@ def _parse_github_releases(items: list[dict], url: str, target_date: date) -> li
 # Generic JSON API fallback
 # ---------------------------------------------------------------------------
 
-def _parse_generic_json(data: Any, url: str, target_date: date) -> list[dict[str, Any]]:
+def _parse_generic_json(data: Any, url: str, start_date: date, end_date: date) -> list[dict[str, Any]]:
     """
     Best-effort parsing of an unknown JSON structure.
 
@@ -469,7 +528,8 @@ def _parse_generic_json(data: Any, url: str, target_date: date) -> list[dict[str
                 raw_date = item[field]
                 break
 
-        if _parse_date_value(raw_date) != target_date:
+        entry_date = _parse_date_value(raw_date)
+        if not _in_date_range(entry_date, start_date, end_date):
             continue
 
         name = item.get("name") or item.get("title") or item.get("id") or "Unknown"
@@ -478,7 +538,7 @@ def _parse_generic_json(data: Any, url: str, target_date: date) -> list[dict[str
         releases.append(_blank_release(
             model_name=str(name),
             provider=provider,
-            release_date=str(target_date),
+            release_date=str(entry_date),
             model_details=str(details)[:500] if details else None,
             source=source,
         ))
@@ -524,15 +584,16 @@ def deduplicate_releases(releases: list[dict[str, Any]]) -> list[dict[str, Any]]
 # Per-URL dispatch
 # ---------------------------------------------------------------------------
 
-def _fetch_and_parse(url: str, client: httpx.Client, target_date: date) -> list[dict[str, Any]]:
+def _fetch_and_parse(url: str, client: httpx.Client, start_date: date, end_date: date) -> list[dict[str, Any]]:
     """
-    Fetch *url* and return normalised releases for *target_date*.
+    Fetch *url* and return normalised releases within [start_date, end_date].
 
     Dispatch order:
       1. HuggingFace models API  -> paginated JSON -> _parse_huggingface
       2. GitHub releases API     -> paginated JSON -> _parse_github_releases
       3. Everything else         -> single GET, sniff Content-Type:
            RSS/Atom              -> _parse_rss
+           XML sitemap           -> _parse_sitemap
            JSON                  -> _parse_generic_json
     """
     logger.info("Fetching %s", url)
@@ -540,13 +601,13 @@ def _fetch_and_parse(url: str, client: httpx.Client, target_date: date) -> list[
     # HuggingFace models API -- pages are 0-indexed (p=0 is the first/latest page)
     if "huggingface.co/api/models" in url:
         items = _paginate_json(url, client, page_param="p", page_start=0)
-        return _parse_huggingface(items, target_date)
+        return _parse_huggingface(items, start_date, end_date)
 
     # GitHub releases API -- 1-indexed pages
     if "api.github.com" in url and "/releases" in url:
         base = re.sub(r"[?&]per_page=\d+", "", url)
         items = _paginate_json(base, client, page_param="page", page_start=1)
-        return _parse_github_releases(items, url, target_date)
+        return _parse_github_releases(items, url, start_date, end_date)
 
     response = _fetch_url(url, client)
     if response is None:
@@ -557,14 +618,14 @@ def _fetch_and_parse(url: str, client: httpx.Client, target_date: date) -> list[
 
     # XML sitemap (e.g. Anthropic uses sitemap.xml with <lastmod> instead of RSS)
     if path.endswith("sitemap.xml") or "sitemap" in path:
-        return _parse_sitemap(response.content, url, target_date)
+        return _parse_sitemap(response.content, url, start_date, end_date)
 
     if _is_rss(url, content_type):
-        return _parse_rss(response.content, url, target_date)
+        return _parse_rss(response.content, url, start_date, end_date)
 
     try:
         data = response.json()
-        return _parse_generic_json(data, url, target_date)
+        return _parse_generic_json(data, url, start_date, end_date)
     except Exception:
         logger.warning("Could not parse response from %s as JSON; skipping.", url)
         return []
@@ -577,18 +638,20 @@ def _fetch_and_parse(url: str, client: httpx.Client, target_date: date) -> list[
 def fetch_foundation_model_releases(
     urls: list[str] | None = None,
     current_date: date | None = None,
+    since_days: int = 7,
 ) -> list[dict[str, Any]]:
     """
-    Fetch model release information from the given sources and return only
-    releases that occurred on *current_date*.
+    Fetch model release information from the given sources and return releases
+    within the window [current_date - (since_days-1), current_date].
 
     Parameters
     ----------
     urls:
         List of feed / API URLs to query. Defaults to SOURCE_URLS from config.
     current_date:
-        Only releases whose date matches this value are returned.
-        Defaults to today (UTC).
+        The end of the date window (inclusive). Defaults to today (UTC).
+    since_days:
+        Number of days to look back (1 = today only, 7 = last week).
 
     Returns
     -------
@@ -601,12 +664,15 @@ def fetch_foundation_model_releases(
     if current_date is None:
         current_date = datetime.now(timezone.utc).date()
 
+    since_days = max(1, since_days)
+    start_date = current_date - timedelta(days=since_days - 1)
+
     all_releases: list[dict[str, Any]] = []
 
     with httpx.Client() as client:
         for url in urls:
             try:
-                releases = _fetch_and_parse(url, client, current_date)
+                releases = _fetch_and_parse(url, client, start_date, current_date)
                 logger.info("  -> %d matching release(s) from %s", len(releases), url)
                 all_releases.extend(releases)
             except Exception as exc:
@@ -616,7 +682,8 @@ def fetch_foundation_model_releases(
     deduplicated.sort(key=lambda r: (r.get("model_name") or "").lower())
 
     logger.info(
-        "Total releases for %s: %d (from %d raw, across %d source(s))",
+        "Total releases for %s..%s: %d (from %d raw, across %d source(s))",
+        start_date,
         current_date,
         len(deduplicated),
         len(all_releases),

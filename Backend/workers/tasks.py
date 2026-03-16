@@ -129,9 +129,19 @@ def generate_audio_task(self, digest_result: dict) -> dict:
         {"run_db_id": int, "pdf_path": str}
 
     Returns a dict passed to ``upload_blob_task``.
+    Skipped entirely when ENABLE_ELEVENLABS=0.
     """
     run_db_id = digest_result.get("run_db_id", 0)
     pdf_path  = digest_result.get("pdf_path", "")
+
+    # Check feature flag
+    try:
+        from config.settings import settings
+        if not settings.enable_elevenlabs:
+            logger.info("celery_audio_skip", reason="elevenlabs_disabled", run_db_id=run_db_id)
+            return {"run_db_id": run_db_id, "pdf_path": pdf_path, "audio_path": ""}
+    except Exception:
+        pass
 
     if not pdf_path:
         logger.info("celery_audio_skip", reason="no_pdf_path", run_db_id=run_db_id)
@@ -241,17 +251,18 @@ def daily_digest_job() -> str:
     logger.info("celery_daily_job_enqueued", run_db_id=run_db_id,
                 recipients=len(email_set))
 
-    # Chain: digest → audio → blob
-    (
-        run_digest_pipeline.s(
-            run_db_id=run_db_id,
-            mode="full",
-            since_days=1,
-            email_recipients=list(email_set),
-        )
-        | generate_audio_task.s()
-        | upload_blob_task.s()
-    ).apply_async()
+    # Chain: digest → (audio →) blob  [audio skipped when ENABLE_ELEVENLABS=0]
+    digest_step = run_digest_pipeline.s(
+        run_db_id=run_db_id,
+        mode="full",
+        since_days=1,
+        email_recipients=list(email_set),
+    )
+    if settings.enable_elevenlabs:
+        task_chain = digest_step | generate_audio_task.s() | upload_blob_task.s()
+    else:
+        task_chain = digest_step | upload_blob_task.s()
+    task_chain.apply_async()
 
     return f"run_{run_db_id}_enqueued"
 
