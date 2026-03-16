@@ -67,9 +67,12 @@ class Settings(BaseSettings):
     # Redis
     redis_url: Optional[str] = Field(default=None, env="REDIS_URL")
 
-    # Voice Agent — ElevenLabs
+    # Voice Agent — ElevenLabs (TTS)
     elevenlabs_api_key: Optional[str] = Field(default=None, env="ELEVENLABS_API_KEY")
     elevenlabs_voice_id: str = Field(default="21m00Tcm4TlvDq8ikWAM", env="ELEVENLABS_VOICE_ID")
+
+    # Voice Agent — Deepgram (streaming STT, optional — Whisper used as fallback)
+    deepgram_api_key: Optional[str] = Field(default=None, env="DEEPGRAM_API_KEY")
 
     # Azure Blob Storage — digest PDF + audio archival
     azure_blob_connection_string: Optional[str] = Field(default=None, env="AZURE_BLOB_CONNECTION_STRING")

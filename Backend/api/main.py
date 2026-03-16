@@ -16,7 +16,7 @@ import secrets
 import uvicorn
 import structlog
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, field_validator
@@ -1924,6 +1924,22 @@ class DigestChatRequest(BaseModel):
     run_id: str
     message: str
     history: List[Dict[str, str]] = []
+
+
+@app.websocket("/api/v1/voice/{run_id}")
+async def voice_websocket(
+    websocket: WebSocket,
+    run_id:    int,
+    user_id:   Optional[int] = Query(default=None),
+):
+    """Real-time voice agent WebSocket.
+
+    Connect:  ws://host/api/v1/voice/{run_id}?user_id=<int>
+
+    Protocol: see api/voice.py module docstring.
+    """
+    from api.voice import voice_session
+    await voice_session(websocket, run_id=run_id, user_id=user_id)
 
 
 @app.post("/chat")
