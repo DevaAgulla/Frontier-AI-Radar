@@ -24,7 +24,7 @@ logger = structlog.get_logger()
 
 # ElevenLabs streaming endpoint
 _TTS_URL      = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
-_CHUNK_BYTES  = 512        # smaller = lower first-byte latency
+_CHUNK_BYTES  = 4096       # larger chunks = cleaner MP3 frame boundaries
 _TIMEOUT      = 15.0       # seconds — allow for slow network
 
 # Voice settings (match existing voice/generate_voice_digest.py defaults)
@@ -40,8 +40,8 @@ async def stream_tts(
     *,
     api_key: str,
     voice_id: str,
-    model_id: str = "eleven_turbo_v2",   # turbo for lowest latency
-    output_format: str = "mp3_22050_32", # lower bitrate = smaller chunks = lower latency
+    model_id: str = "eleven_turbo_v2",    # turbo for lowest latency
+    output_format: str = "mp3_44100_128", # 128kbps 44.1kHz — clear, natural voice
 ) -> AsyncGenerator[bytes, None]:
     """Yield raw audio bytes as they stream from ElevenLabs.
 

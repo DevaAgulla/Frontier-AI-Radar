@@ -35,8 +35,8 @@ from typing import AsyncGenerator, AsyncIterator
 # Also yield on long pauses: ... or — (em-dash)
 _HARD_BOUNDARY = re.compile(r'(?<=[.!?])\s+')
 _SOFT_BOUNDARY = re.compile(r'(?<=[\,;:])\s{2,}')   # double space after comma
-_MIN_CHARS      = 40    # don't emit very short fragments (e.g. "Hi.")
-_MAX_CHARS      = 300   # force-flush long buffers even without a boundary
+_MIN_CHARS      = 18    # yield as soon as we have a sentence ≥18 chars (~4 words)
+_MAX_CHARS      = 160   # force-flush at 160 chars — keeps TTS chunks short and fast
 
 
 class SentenceStreamer:

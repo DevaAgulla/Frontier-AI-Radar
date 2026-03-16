@@ -22,7 +22,20 @@
       "WebFetch(domain:www.baihezi.com)",
       "WebFetch(domain:reference.langchain.com)",
       "WebFetch(domain:harshaselvi.medium.com)",
-      "Bash(\"c:\\\\Users\\\\RathlavathRameshnaya\\\\Videos\\\\InternalHackathon\\\\python-venv\\\\Scripts\\\\pip.exe\" show:*)"
+      "Bash(\"c:\\\\Users\\\\RathlavathRameshnaya\\\\Videos\\\\InternalHackathon\\\\python-venv\\\\Scripts\\\\pip.exe\" show:*)",
+      "Bash(xargs ls:*)",
+      "Bash(python -c \"from api.voice import voice_session; print\\(''voice.py import OK''\\)\")",
+      "Bash(python -c \"import starlette; print\\(''starlette:'', starlette.__version__\\)\")",
+      "Bash(python -c \"import fastapi; print\\(''fastapi:'', fastapi.__version__\\)\")",
+      "Bash(python \"c:/Users/RathlavathRameshnaya/Videos/InternalHackathon/Backend/python-venv/Scripts/python.exe\" -c \":*)",
+      "Bash(curl -v -N -H \"Connection: Upgrade\" -H \"Upgrade: websocket\" -H \"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\" -H \"Sec-WebSocket-Version: 13\" -H \"Host: localhost:8000\" \"http://localhost:8000/api/v1/voice/6\")",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s http://localhost:8000/docs)",
+      "Bash(ls /c/Users/RathlavathRameshnaya/Videos/InternalHackathon/frontend/app/api/runs/[id])",
+      "Bash(ls /c/Users/RathlavathRameshnaya/Videos/InternalHackathon/frontend/app/digest/[run_id]/voice)",
+      "Bash(ls /c/Users/RathlavathRameshnaya/Videos/InternalHackathon/frontend/app/digest/[run_id]/chat)",
+      "Bash(grep -n \"interrupted\\\\|barge\\\\|aiSpeaking\\\\|continuous\\\\|auto.restart\\\\|bargeIn\" /c/Users/RathlavathRameshnaya/Videos/InternalHackathon/frontend/app/digest/[run_id]/voice/page.tsx)",
+      "Bash(grep -r \"chat_sessions\\\\|chat_messages\" c:UsersRathlavathRameshnayaVideosInternalHackathonBackend --include=*.py --include=*.sql)"
     ]
   }
 }

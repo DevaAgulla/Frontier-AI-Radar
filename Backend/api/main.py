@@ -1929,18 +1929,48 @@ class DigestChatRequest(BaseModel):
     history: List[Dict[str, str]] = []
 
 
-@app.websocket("/api/v1/voice/{run_id}")
-async def voice_websocket(
-    websocket: WebSocket,
-    run_id:    int,
-    user_id:   Optional[int] = Query(default=None),
+@app.get("/api/v1/voice/{run_id}/history")
+async def get_voice_history(
+    run_id:  int,
+    user_id: Optional[int] = Query(default=None),
 ):
+    """Return persisted voice conversation history for (run_id, user_id).
+
+    Used by the voice page on load to restore the conversation transcript and
+    to initialise the IndexedDB audio-key counter so new recordings don't
+    overwrite existing ones.
+    """
+    from db.chat import get_or_create_session, load_voice_history
+
+    info       = get_or_create_session(run_id=run_id, user_id=user_id)
+    session_id = info["session_id"]
+    is_new     = info.get("is_new", False)
+    messages   = load_voice_history(session_id)
+
+    return {
+        "session_id": session_id,
+        "is_new":     is_new,
+        "messages":   messages,
+    }
+
+
+@app.websocket("/api/v1/voice/{run_id}")
+async def voice_websocket(websocket: WebSocket, run_id: int):
     """Real-time voice agent WebSocket.
 
     Connect:  ws://host/api/v1/voice/{run_id}?user_id=<int>
 
     Protocol: see api/voice.py module docstring.
     """
+    # Parse user_id manually from query string — avoids FastAPI injection issues
+    # on WebSocket routes in some versions
+    user_id: Optional[int] = None
+    raw_uid = websocket.query_params.get("user_id")
+    if raw_uid:
+        try:
+            user_id = int(raw_uid)
+        except ValueError:
+            pass
     from api.voice import voice_session
     await voice_session(websocket, run_id=run_id, user_id=user_id)
 

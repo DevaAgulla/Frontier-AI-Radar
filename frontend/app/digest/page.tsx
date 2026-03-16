@@ -767,33 +767,45 @@ function DigestActionCards({
           </div>
         </button>
 
-        {/* Card 3 — Chat */}
-        <Link
-          href={`/digest/${digest.run_id}/chat`}
-          className="group relative flex flex-col items-center justify-between rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5 aspect-square hover:border-[var(--primary)]/60 hover:shadow-xl hover:shadow-[var(--primary)]/8 hover:-translate-y-0.5 transition-all overflow-hidden"
-        >
-          <div className="absolute inset-0 bg-[var(--primary)]/0 group-hover:bg-[var(--primary)]/[0.03] transition-colors rounded-2xl" />
-
-          <div className="relative w-full flex flex-col h-full gap-3">
-            <div className="w-11 h-11 rounded-xl bg-[var(--primary-light)] group-hover:bg-[var(--primary)]/18 flex items-center justify-center transition-colors shrink-0">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
-            </div>
-
-            <div className="flex-1">
-              <p className="font-bold text-[var(--text-primary)] text-sm leading-tight">Interact with AI</p>
-              <p className="text-[11px] text-[var(--text-secondary)] mt-1 leading-relaxed">Chat or voice · deep search on demand</p>
-            </div>
-
-            <div className="flex items-center gap-1 text-[var(--primary)] text-[11px] font-bold">
-              Open Chat
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:translate-x-0.5 transition-transform">
-                <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
-              </svg>
-            </div>
+        {/* Card 3 — Chat + Voice */}
+        <div className="relative flex flex-col rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5 aspect-square overflow-hidden">
+          <div className="w-11 h-11 rounded-xl bg-[var(--primary-light)] flex items-center justify-center shrink-0">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
           </div>
-        </Link>
+
+          <div className="flex-1 mt-3">
+            <p className="font-bold text-[var(--text-primary)] text-sm leading-tight">Interact with AI</p>
+            <p className="text-[11px] text-[var(--text-secondary)] mt-1 leading-relaxed">Choose your mode below</p>
+          </div>
+
+          {/* Two mode buttons */}
+          <div className="flex gap-2 mt-2">
+            <Link
+              href={`/digest/${digest.run_id}/chat`}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-[var(--primary-light)] hover:bg-[var(--primary)] text-[var(--primary)] hover:text-white text-[11px] font-bold transition-all"
+            >
+              {/* Chat icon */}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              Text
+            </Link>
+            <Link
+              href={`/digest/${digest.run_id}/voice`}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border border-[var(--primary)]/40 hover:bg-[var(--primary)] text-[var(--primary)] hover:text-white text-[11px] font-bold transition-all"
+            >
+              {/* Mic icon */}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+              </svg>
+              Voice
+            </Link>
+          </div>
+        </div>
 
       </div>
     </div>
