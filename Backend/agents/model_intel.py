@@ -33,6 +33,7 @@ from core.tools import (
     search_entity_memory,
     flag_verification_task,
 )
+from agents.schemas import FindingsOutput
 from config.settings import settings
 import structlog
 
@@ -245,8 +246,12 @@ async def model_intel_agent(state: RadarState) -> RadarState:
             )},
         )
 
-        final_text = extract_agent_output(result["messages"])
-        findings = parse_json_output(final_text)
+        structured = result.get("structured_response")
+        if structured is not None:
+            findings = [f.model_dump() for f in structured.findings]
+        else:
+            final_text = extract_agent_output(result["messages"])
+            findings = parse_json_output(final_text)
 
         # Validate findings + extract verification tasks
         verification_tasks = []

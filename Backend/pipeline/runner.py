@@ -87,6 +87,99 @@ def create_initial_state(
         "email_status": "",
         "errors": [],
         "agent_iterations": {},
+        # Chat fields — None during digest runs; populated only on chat requests
+        "messages":        [],
+        "chat_query":      None,
+        "chat_session_id": None,
+        "chat_mode":       None,
+    }
+
+
+def create_chat_initial_state(
+    run_db_id: int,
+    chat_query: str,
+    chat_session_id: str,
+    chat_mode: str = "text",
+    prior_messages: list | None = None,
+    window_context: str | None = None,
+) -> RadarState:
+    """Create a minimal RadarState for chat invocations through the unified graph.
+
+    Conversation history is injected directly into the ``messages`` channel:
+      - window_context (rolling summary of older turns) as a SystemMessage
+      - prior_messages (last 10 raw turns) as HumanMessage / AIMessage pairs
+      - current user query as the final HumanMessage
+    """
+    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+    messages: list = []
+
+    # Rolling summary of older conversation turns
+    if window_context:
+        messages.append(SystemMessage(
+            content=f"Previous conversation summary:\n{window_context}"
+        ))
+
+    # Session context as system message — tells agent which digest to load
+    # WITHOUT polluting the user message (which would force a digest call every time)
+    messages.append(SystemMessage(
+        content=(
+            f"Active digest run ID: {run_db_id}. "
+            "When a question is about AI news, models, companies, benchmarks, or strategy, "
+            f"call query_digest_state({run_db_id}) to load the intelligence brief. "
+            "For greetings, personal questions, or general knowledge — just respond naturally."
+        )
+    ))
+
+    # Last N raw turns as proper conversational context
+    for m in (prior_messages or []):
+        if m.get("role") == "user":
+            messages.append(HumanMessage(content=m["content"]))
+        elif m.get("role") == "assistant":
+            messages.append(AIMessage(content=m["content"]))
+
+    # Current user message — clean, no prefix
+    messages.append(HumanMessage(content=chat_query))
+
+    return {
+        "run_id":             f"run_{run_db_id}",
+        "run_mode":           "chat",
+        "run_db_id":          run_db_id,
+        "selected_agents":    [],
+        "mission_goal":       "",
+        "strategy_plan":      {},
+        "since_timestamp":    "",
+        "config":             {},
+        "custom_urls":        [],
+        "url_mode":           "default",
+        "extraction_db_id":   0,
+        "discovered_sources": [],
+        "trend_signals":      [],
+        "competitor_findings":[],
+        "provider_findings":  [],
+        "research_findings":  [],
+        "hf_findings":        [],
+        "verification_tasks": [],
+        "verification_verdicts": [],
+        "merged_findings":    [],
+        "ranked_findings":    [],
+        "email_recipients":   [],
+        "digest_json":        {},
+        "digest_markdown":    "",
+        "digest_needs_rewrite": False,
+        "pdf_path":           "",
+        "email_status":       "",
+        "errors":             [],
+        "agent_iterations":   {},
+        "persona_id":         None,
+        "persona_prompt":     None,
+        "suggested_questions": None,
+        # Shared channel — LangGraph passes this into the chat subgraph
+        "messages":           messages,
+        # Routing trigger
+        "chat_query":         chat_query,
+        "chat_session_id":    chat_session_id,
+        "chat_mode":          chat_mode,
     }
 
 
@@ -164,14 +257,65 @@ def prepare_radar_run(
     )
 
 
+async def _build_checkpointer():
+    """Create an AsyncPostgresSaver for LangGraph state persistence.
+
+    Returns None (with a warning) if psycopg v3 is not installed or
+    the connection fails — the pipeline still runs, just without checkpointing.
+    """
+    try:
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        from config.settings import settings
+
+        db_url = settings.database_url
+        # psycopg v3 needs postgresql+psycopg:// scheme
+        conn_str = (
+            db_url
+            .replace("postgresql://", "postgresql+psycopg://", 1)
+            .replace("postgres://",   "postgresql+psycopg://", 1)
+        )
+        # Strip SQLAlchemy options= param — not valid for raw psycopg3 connstr
+        if "options=" in conn_str:
+            from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
+            parsed = urlparse(conn_str)
+            qs = {k: v for k, v in parse_qs(parsed.query).items() if k != "options"}
+            conn_str = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+
+        # Use a direct AsyncConnection — no thread pool, no ProactorEventLoop conflict.
+        # AsyncConnectionPool spawns background threads that inherit the wrong loop
+        # on Windows; a single AsyncConnection avoids that entirely.
+        import psycopg
+
+        conn = await psycopg.AsyncConnection.connect(conn_str, autocommit=True)
+        checkpointer = AsyncPostgresSaver(conn)
+        # setup() creates the checkpoint tables (idempotent)
+        await checkpointer.setup()
+        logger.info("LangGraph checkpointer: PostgreSQL ready")
+        return checkpointer
+    except Exception as e:
+        logger.warning("LangGraph checkpointer unavailable — running without state persistence",
+                       error=str(e))
+        return None
+
+
 async def execute_prepared_radar(initial_state: RadarState) -> RadarState:
     """Execute a previously prepared run state and update final DB status."""
-    graph = create_radar_graph()
-    t0 = time.time()
+    run_id = initial_state.get("run_id", "run-default")
     run_db_id = initial_state.get("run_db_id", 0)
+    t0 = time.time()
+
+    # Build checkpointer — enables full LangGraph state persistence per run
+    checkpointer = await _build_checkpointer()
+    graph = create_radar_graph(checkpointer=checkpointer)
+
+    # thread_id = "run_{run_db_id}" — deterministic, integer-derived so the chat
+    # agent can reconstruct it from run_db_id without any DB lookup.
+    thread_id = f"run_{run_db_id}" if run_db_id else run_id
+    invoke_config = {"configurable": {"thread_id": thread_id}}
+    logger.info("LangGraph digest thread", thread_id=thread_id, run_db_id=run_db_id)
 
     try:
-        final_state = await graph.ainvoke(initial_state)
+        final_state = await graph.ainvoke(initial_state, config=invoke_config)
         elapsed = int(time.time() - t0)
 
         # ── DB: mark run as success ──────────────────────────────────
@@ -194,6 +338,18 @@ async def execute_prepared_radar(initial_state: RadarState) -> RadarState:
             errors_count=len(final_state.get("errors", [])),
             elapsed_seconds=elapsed,
         )
+
+        # ── Post-run: generate audio + upload PDF/audio to Azure Blob ──
+        # Runs after the pipeline and DB update — failures here never
+        # affect the run status returned to the caller.
+        pdf_path = final_state.get("pdf_path", "")
+        if pdf_path:
+            try:
+                from storage.post_run import post_run_upload
+                await post_run_upload(pdf_path, run_db_id)
+            except Exception as _e:
+                logger.warning("post_run_upload raised unexpectedly", error=str(_e))
+
         return final_state
 
     except Exception as e:

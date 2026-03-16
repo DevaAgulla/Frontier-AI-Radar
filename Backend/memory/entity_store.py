@@ -1,105 +1,115 @@
-"""Entity memory operations (ChromaDB vector store)."""
+"""Entity memory operations (PostgreSQL entities table in ai_radar schema).
 
+Replaces ChromaDB. Uses ILIKE text search now; pgvector semantic search
+will be activated once the Azure admin enables the vector extension.
+
+Table: ai_radar.entities
+  id, name, entity_type, description, metadata, source, embedding, updated_at
+
+The EntityStore class interface is identical to the old ChromaDB version.
+"""
+
+import json
 from typing import List, Dict, Any, Optional
-from pathlib import Path
-import chromadb
-from chromadb.config import Settings as ChromaSettings
-from config.settings import settings
+
 from memory.schemas import EntityProfile
 
 
 class EntityStore:
-    """ChromaDB vector store for entity embeddings."""
-
-    def __init__(self):
-        """Initialize ChromaDB client and embedding model."""
-        self.client = chromadb.PersistentClient(
-            path=str(settings.entity_store_path),
-            settings=ChromaSettings(anonymized_telemetry=False),
-        )
-        self.collection = self.client.get_or_create_collection(
-            name="entities", metadata={"hnsw:space": "cosine"}
-        )
-        # Lazy load embedding model (stub for now - team will provide real implementation)
-        self._embedding_model = None
-
-    @property
-    def embedding_model(self):
-        """Lazy load embedding model via core.embedder."""
-        if self._embedding_model is None:
-            from core.embedder import get_embedding_model
-            self._embedding_model = get_embedding_model()
-        return self._embedding_model
-
-    def _embed(self, text: str) -> List[float]:
-        """Generate embedding for text using real SentenceTransformer."""
-        from core.embedder import embed_text
-        return embed_text(text, model=self.embedding_model)
+    """PostgreSQL-backed entity store with ILIKE text search fallback."""
 
     def add_entity(self, entity: EntityProfile) -> None:
-        """Add or update an entity in the vector store."""
-        # Create embedding from entity description
-        embedding = self._embed(f"{entity['name']} {entity['description']}")
+        """Add or update an entity in the entities table (UPSERT)."""
+        from db.connection import get_engine
+        from sqlalchemy import text
 
-        # Check if entity exists
-        existing = self.collection.get(ids=[entity["id"]])
-        if existing["ids"]:
-            # Update
-            self.collection.update(
-                ids=[entity["id"]],
-                embeddings=[embedding],
-                documents=[entity["description"]],
-                metadatas=[entity],
-            )
-        else:
-            # Add new
-            self.collection.add(
-                ids=[entity["id"]],
-                embeddings=[embedding],
-                documents=[entity["description"]],
-                metadatas=[entity],
-            )
+        core_keys = {"id", "name", "entity_type", "description", "source"}
+        meta = {k: v for k, v in entity.items() if k not in core_keys}
+
+        try:
+            with get_engine().begin() as conn:
+                conn.execute(text("""
+                    INSERT INTO entities
+                        (id, name, entity_type, description, metadata, source, updated_at)
+                    VALUES
+                        (:id, :name, :entity_type, :description,
+                         CAST(:metadata AS jsonb), :source, NOW())
+                    ON CONFLICT (id) DO UPDATE
+                        SET name        = EXCLUDED.name,
+                            description = EXCLUDED.description,
+                            metadata    = EXCLUDED.metadata,
+                            updated_at  = NOW()
+                """), {
+                    "id":          entity.get("id", ""),
+                    "name":        entity.get("name", ""),
+                    "entity_type": entity.get("entity_type", "unknown"),
+                    "description": entity.get("description", ""),
+                    "metadata":    json.dumps(meta),
+                    "source":      entity.get("source", "agent"),
+                })
+        except Exception:
+            pass  # non-critical — never crash the pipeline
 
     def search_entities(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """Search for entities by semantic similarity."""
-        query_embedding = self._embed(query)
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            include=["metadatas", "documents", "distances"],
-        )
+        """
+        Search entities by text similarity (ILIKE).
+        When pgvector is enabled this can be upgraded to cosine-similarity
+        without changing callers.
+        """
+        from db.connection import get_engine
+        from sqlalchemy import text
 
-        entities = []
-        if results["ids"] and len(results["ids"][0]) > 0:
-            for i, entity_id in enumerate(results["ids"][0]):
-                entities.append(
+        if not query or not query.strip():
+            return []
+
+        try:
+            with get_engine().connect() as conn:
+                result = conn.execute(text("""
+                    SELECT id, name, entity_type, description, metadata
+                    FROM entities
+                    WHERE name ILIKE :q OR description ILIKE :q
+                    ORDER BY updated_at DESC
+                    LIMIT :top_k
+                """), {"q": f"%{query}%", "top_k": top_k})
+                return [
                     {
-                        "id": entity_id,
-                        "metadata": results["metadatas"][0][i],
-                        "document": results["documents"][0][i],
-                        "distance": results["distances"][0][i],
+                        "id":       row[0],
+                        "metadata": row[4] or {},
+                        "document": row[3] or "",
+                        "distance": 0.0,
                     }
-                )
-        return entities
+                    for row in result.fetchall()
+                ]
+        except Exception:
+            return []
 
     def get_entity(self, entity_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific entity by ID."""
-        results = self.collection.get(ids=[entity_id], include=["metadatas", "documents"])
-        if results["ids"]:
-            return {
-                "id": results["ids"][0],
-                "metadata": results["metadatas"][0],
-                "document": results["documents"][0],
-            }
-        return None
+        from db.connection import get_engine
+        from sqlalchemy import text
+
+        try:
+            with get_engine().connect() as conn:
+                result = conn.execute(text(
+                    "SELECT id, name, entity_type, description, metadata FROM entities WHERE id = :id"
+                ), {"id": entity_id})
+                row = result.fetchone()
+                if row:
+                    return {"id": row[0], "metadata": row[4] or {}, "document": row[3] or ""}
+                return None
+        except Exception:
+            return None
 
 
-# Global instance
+# ---------------------------------------------------------------------------
+# Global singleton
+# ---------------------------------------------------------------------------
+
 _entity_store: Optional[EntityStore] = None
 
 
 def get_entity_store() -> EntityStore:
-    """Get or create global entity store instance."""
+    """Get or create the global entity store instance."""
     global _entity_store
     if _entity_store is None:
         _entity_store = EntityStore()

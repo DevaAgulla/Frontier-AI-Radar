@@ -68,7 +68,14 @@ def _build_llm():
 # AGENT FACTORY
 # ---------------------------------------------------------------------------
 
-def build_react_agent(system_prompt: str, tools: list):
+def build_react_agent(
+    system_prompt: str,
+    tools: list,
+    response_format=None,
+    checkpointer=None,
+    store=None,
+    interrupt_before=None,
+):
     """
     Build a LangGraph-native ReAct agent using create_react_agent.
 
@@ -81,20 +88,54 @@ def build_react_agent(system_prompt: str, tools: list):
       - Every step traced in LangSmith → full observability
 
     Args:
-        system_prompt: Agent's identity, goal, rules, output schema.
-                       Becomes the persistent system message across the ReAct loop.
-        tools:         List of @tool-decorated functions the LLM can invoke.
+        system_prompt:    Agent identity, goal, rules, output schema.
+        tools:            List of @tool-decorated functions the LLM can invoke.
+        response_format:  Optional Pydantic BaseModel class. When set, LangGraph adds
+                          a final structured-output node that stores the result in
+                          result["structured_response"]. Eliminates manual JSON parsing.
+                          Requires LLM to support .with_structured_output().
+        checkpointer:     Optional LangGraph checkpointer (e.g. PostgresSaver).
+                          Enables persistent state, interrupt/resume, and streaming
+                          with tool use. Wired after DB credentials arrive.
+        store:            Optional LangGraph store (e.g. PostgresStore).
+                          Enables cross-agent shared memory. Wired after DB.
+        interrupt_before: Optional list of node names to pause before (human-in-loop).
 
     Returns:
         Compiled LangGraph agent graph.
-        Invoke with: agent.ainvoke({"messages": [HumanMessage(content=...)]})
+        Invoke with:  agent.ainvoke({"messages": [HumanMessage(content=...)]})
+        Stream with:  agent.astream({"messages": [...]}, stream_mode="values")
+
+    Structured output extraction pattern:
+        structured = result.get("structured_response")
+        if structured is not None:
+            data = structured.model_dump()   # or .findings, .verdicts, etc.
+        else:
+            final_text = extract_agent_output(result["messages"])
+            data = parse_json_output(final_text)
     """
     model = _build_llm()
-    return create_react_agent(
-        model=model,
-        tools=tools,
-        prompt=system_prompt,
-    )
+
+    kwargs: dict = {
+        "model": model,
+        "tools": tools,
+        "prompt": system_prompt,
+    }
+
+    # Only pass optional params when provided — avoids changing LangGraph defaults.
+    # OpenRouter does not support the OpenAI structured-output API (parsed/refusal fields),
+    # so we skip response_format for OpenRouter and rely on the text fallback instead.
+    _backend = (settings.llm_backend or "gemini").lower().strip()
+    if response_format is not None and _backend != "openrouter":
+        kwargs["response_format"] = response_format
+    if checkpointer is not None:
+        kwargs["checkpointer"] = checkpointer
+    if store is not None:
+        kwargs["store"] = store
+    if interrupt_before is not None:
+        kwargs["interrupt_before"] = interrupt_before
+
+    return create_react_agent(**kwargs)
 
 
 # ---------------------------------------------------------------------------

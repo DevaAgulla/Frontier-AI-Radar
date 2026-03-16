@@ -4,10 +4,12 @@ import { usePathname } from "next/navigation";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
 import LandingPage from "./LandingPage";
+import UserHeader from "./UserHeader";
 import { RunConfigProvider } from "../context/RunConfigContext";
 import { ToastProvider } from "../context/ToastContext";
 import { useAuth } from "../context/AuthContext";
 import ToastViewport from "./ToastViewport";
+import { HEADER_HEIGHT } from "./Header";
 
 export default function LayoutWithSidebar({ children }: { readonly children: React.ReactNode }) {
   const pathname = usePathname();
@@ -50,7 +52,22 @@ export default function LayoutWithSidebar({ children }: { readonly children: Rea
     return <LandingPage />;
   }
 
-  // Authenticated → show normal app layout
+  // Non-admin users get a clean layout without the admin sidebar
+  if (user.is_admin === false) {
+    return (
+      <ToastProvider>
+        <RunConfigProvider>
+          <UserHeader />
+          <main className="min-h-screen bg-[var(--bg)]" style={{ paddingTop: `${HEADER_HEIGHT}px` }}>
+            {children}
+          </main>
+          <ToastViewport />
+        </RunConfigProvider>
+      </ToastProvider>
+    );
+  }
+
+  // Admin → show normal app layout with sidebar
   return (
     <ToastProvider>
       <RunConfigProvider>

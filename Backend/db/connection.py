@@ -1,29 +1,33 @@
 """
-SQLite database connection layer for Frontier AI Radar.
+PostgreSQL database connection layer for Frontier AI Radar.
+
+Schema: ai_radar
+Tables are created by scripts/setup_db.py — this module only connects.
 
 Usage:
     from db.connection import get_session, init_db
 
-    # Call once at app startup (creates tables if they don't exist)
-    init_db()
+    init_db()  # call once at startup (no-op if already initialised)
 
-    # Use sessions for queries
     with get_session() as session:
-        session.add(Extraction(...))
+        session.add(obj)
         session.commit()
 """
 
-from pathlib import Path
 from contextlib import contextmanager
 from typing import Generator
 
-from sqlalchemy import create_engine, event
+import sqlalchemy as sa
+from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 import structlog
 
-from db.models import Base
-
 logger = structlog.get_logger()
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+TARGET_SCHEMA = "ai_radar"
 
 # ---------------------------------------------------------------------------
 # Engine & session factory (lazy-initialised on first call to init_db)
@@ -38,65 +42,54 @@ def _get_database_url() -> str:
     return settings.database_url
 
 
-def _enable_sqlite_fk(dbapi_conn, connection_record):
-    """Enable foreign-key enforcement for every SQLite connection."""
-    cursor = dbapi_conn.cursor()
-    cursor.execute("PRAGMA foreign_keys = ON")
-    cursor.close()
-
-
-def _migrate_add_column(engine, table: str, column: str, col_type: str) -> None:
-    """Add a column to an existing table if it doesn't exist (SQLite)."""
-    from sqlalchemy import text
-    with engine.connect() as conn:
-        # Check if column already exists
-        result = conn.execute(text(f"PRAGMA table_info({table})"))
-        existing_cols = {row[1] for row in result}
-        if column not in existing_cols:
-            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
-            conn.commit()
-            logger.info(f"Migration: added column {column} to {table}")
-
-
 def init_db() -> None:
     """
-    Initialise the SQLite database.
+    Initialise the PostgreSQL connection pool.
 
-    - Creates the ``db/`` directory if it doesn't exist.
-    - Creates the ``.db`` file and all tables on first run.
-    - Safe to call multiple times (uses ``CREATE TABLE IF NOT EXISTS``).
+    - Connects to Azure PostgreSQL using DATABASE_URL from .env
+    - Sets search_path to ai_radar so all queries resolve to the right schema
+    - Tables are NOT created here — they are created by scripts/setup_db.py
+    - Safe to call multiple times (no-op after first call)
     """
     global _engine, _SessionFactory
 
+    if _engine is not None:
+        return  # already initialised
+
     db_url = _get_database_url()
 
-    # Ensure the directory for the .db file exists
-    if db_url.startswith("sqlite:///"):
-        db_path = Path(db_url.replace("sqlite:///", ""))
-        db_path.parent.mkdir(parents=True, exist_ok=True)
+    # Normalise postgres:// → postgresql:// (some providers give the short form)
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-    _engine = create_engine(
+    is_azure = "postgres.database.azure.com" in db_url
+    connect_args: dict = {}
+    if is_azure:
+        connect_args["sslmode"] = "require"
+
+    # Force search_path so every session lands in ai_radar schema automatically
+    connect_args["options"] = f"-c search_path={TARGET_SCHEMA},public"
+
+    _engine = sa.create_engine(
         db_url,
-        echo=False,                 # set True for SQL debug logging
-        connect_args={"check_same_thread": False},  # needed for SQLite + threads
+        echo=False,
+        future=True,
+        connect_args=connect_args,
+        pool_size=5,
+        max_overflow=10,
+        pool_pre_ping=True,   # validate connections before use
     )
 
-    # Turn on foreign-key support for every connection
-    event.listen(_engine, "connect", _enable_sqlite_fk)
+    # Verify the connection works at startup
+    try:
+        with _engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        logger.info("PostgreSQL connected", schema=TARGET_SCHEMA)
+    except Exception as e:
+        logger.error("PostgreSQL connection failed", error=str(e))
+        raise
 
-    # Create all tables (no-op if they already exist)
-    Base.metadata.create_all(_engine)
-
-    _SessionFactory = sessionmaker(bind=_engine)
-
-    # Lightweight migration: add password_hash column to users table if missing
-    _migrate_add_column(_engine, "users", "password_hash", "VARCHAR(256)")
-
-    # Seed default competitor sources (idempotent — skips if table already has rows)
-    from db.persist import seed_default_competitors
-    seed_default_competitors()
-
-    logger.info("Database initialised", url=db_url)
+    _SessionFactory = sessionmaker(bind=_engine, autocommit=False, autoflush=False)
 
 
 @contextmanager
@@ -124,7 +117,7 @@ def get_session() -> Generator[Session, None, None]:
 
 
 def get_engine():
-    """Return the current SQLAlchemy engine (init if needed)."""
+    """Return the current SQLAlchemy engine (initialises if needed)."""
     if _engine is None:
         init_db()
     return _engine

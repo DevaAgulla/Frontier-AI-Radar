@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pandoc --version)",
+      "Bash(python -c \"import weasyprint; print\\(''weasyprint ok''\\)\")",
+      "Bash(python -c \"import markdown; print\\(''markdown ok''\\)\")",
+      "Bash(pip install:*)",
+      "Bash(python -c \"import reportlab; print\\(''reportlab ok''\\)\")",
+      "Bash(python -c \"import markdown; print\\(''ok''\\)\")",
+      "Bash(python -c \"import xhtml2pdf; print\\(''xhtml2pdf ok''\\)\")",
+      "Bash(find /c/Users/RathlavathRameshnaya/Videos/InternalHackathon/frontend -maxdepth 2 -not -path */node_modules/* -not -path */.next/* -type d)",
+      "Bash(npx tsc:*)",
+      "Bash(python -c \":*)",
+      "Bash(python -c \"from azure.storage.blob import BlobServiceClient; print\\(''azure-storage-blob OK''\\)\")",
+      "Bash(\"c:/Users/RathlavathRameshnaya/Videos/InternalHackathon/python-venv/Scripts/pip.exe\" install:*)",
+      "Bash(python -c \"from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions; print\\(''azure-storage-blob OK''\\)\")",
+      "Bash(find c:/Users/RathlavathRameshnaya/Videos/InternalHackathon/Backend -name *chat* -o -name *conversation*)",
+      "WebFetch(domain:langchain-ai.github.io)",
+      "WebFetch(domain:docs.langchain.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:forum.langchain.com)",
+      "WebFetch(domain:www.baihezi.com)",
+      "WebFetch(domain:reference.langchain.com)",
+      "WebFetch(domain:harshaselvi.medium.com)",
+      "Bash(\"c:\\\\Users\\\\RathlavathRameshnaya\\\\Videos\\\\InternalHackathon\\\\python-venv\\\\Scripts\\\\pip.exe\" show:*)"
+    ]
+  }
+}

@@ -27,6 +27,7 @@ from core.tools import (
     write_memory,
     search_entity_memory,
 )
+from agents.schemas import FindingsOutput
 from config.settings import settings, load_sources_config
 import structlog
 
@@ -111,6 +112,7 @@ _optional_tools = [fetch_headless, diff_content, search_entity_memory]
 _react_agent = build_react_agent(
     system_prompt=COMPETITOR_INTEL_CONFIG["system_prompt"],
     tools=_optional_tools,
+    response_format=FindingsOutput,
 )
 
 
@@ -200,8 +202,12 @@ async def competitor_intel_agent(state: RadarState) -> RadarState:
             )},
         )
 
-        final_text = extract_agent_output(result["messages"])
-        findings = parse_json_output(final_text)
+        structured = result.get("structured_response")
+        if structured is not None:
+            findings = [f.model_dump() for f in structured.findings]
+        else:
+            final_text = extract_agent_output(result["messages"])
+            findings = parse_json_output(final_text)
 
         # Validate findings
         for f in findings:

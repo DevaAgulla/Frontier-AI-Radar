@@ -3,6 +3,8 @@
 from typing import Annotated, TypedDict, Optional
 from operator import add
 from datetime import datetime
+from langchain_core.messages import BaseMessage
+from langgraph.graph import add_messages
 
 
 class Finding(TypedDict):
@@ -109,5 +111,23 @@ class RadarState(TypedDict):
     email_status: str
     errors: Annotated[list[AgentError], add]
 
+    # Persona (loaded by API layer from persona_templates table)
+    persona_id: Optional[str]       # UUID of active persona_template (None = default)
+    persona_prompt: Optional[str]   # digest_system_prompt from persona_templates
+    suggested_questions: Optional[list]  # pre-seeded questions for the active persona
+
     # ReAct loop tracking
     agent_iterations: dict  # {agent_name: current_iteration}
+
+    # ── Chat node (shared channel with chat_agent subgraph) ────────────────
+    # Adding `messages` with add_messages reducer is the LangGraph-documented
+    # pattern for embedding a create_react_agent subgraph directly as a node
+    # in a parent graph with a different state schema.  LangGraph passes only
+    # the shared keys to the subgraph (messages) and merges the output back.
+    #
+    # Chat fields are Optional — they are None during every digest pipeline run
+    # and only populated when the API routes a chat request through this graph.
+    messages:        Annotated[list[BaseMessage], add_messages]  # shared with chat subgraph
+    chat_query:      Optional[str]   # set by API → triggers route_from_start → chat_agent
+    chat_session_id: Optional[str]   # chat session UUID (used as thread_id suffix)
+    chat_mode:       Optional[str]   # "text" | "voice"

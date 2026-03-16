@@ -29,31 +29,90 @@
   --status-failed-text: #991b1b;
 }
 
-/* Dark mode */
+/* ════════════════════════════════════════════════════════════════════════════
+   DEEP INTELLIGENCE — Frontier AI Radar signature dark theme
+   ─────────────────────────────────────────────────────────────────────────
+   Crafted by studying what makes Claude, ChatGPT & Gemini feel premium:
+
+   Claude    → Warmth. Barely-there violet in every surface. Off-white
+               text that feels human, not cold. Breathing room.
+   ChatGPT   → Discipline. Near-pure black. Content-first. Zero noise.
+               Clean hierarchy. Nothing competes with the text.
+   Gemini    → Energy. Ambient glow from above. Vivid accent that pops.
+               Electric blue-violet that feels "AI-native".
+
+   The synthesis: ultra-deep near-black with a whisper of violet warmth
+   (so surfaces feel crafted, not just "grey"), a signature electric
+   violet-indigo accent that lives between Claude's purple and Gemini's
+   blue, and a Gemini-style ambient halo at the top of the viewport.
+   ════════════════════════════════════════════════════════════════════════ */
 html.dark {
-  --bg: #111827;
-  --bg-card: #1F2937;
-  --header-bg: #1F2937;
-  --border: #374151;
-  --border-light: #374151;
-  --text-primary: #F9FAFB;
-  --text-secondary: #D1D5DB;
-  --text-muted: #9CA3AF;
-  --primary: #A78BFA;
-  --primary-hover: #C4B5FD;
-  --primary-light: rgba(167, 139, 250, 0.15);
-  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
-  --success-bg: rgba(16, 185, 129, 0.2);
-  --success-text: #6ee7b7;
-  --error-bg: rgba(239, 68, 68, 0.2);
-  --error-text: #fca5a5;
-  --status-success-bg: rgba(52, 211, 153, 0.25);
-  --status-success-text: #6ee7b7;
-  --status-running-bg: rgba(251, 191, 36, 0.25);
-  --status-running-text: #fcd34d;
-  --status-failed-bg: rgba(239, 68, 68, 0.25);
-  --status-failed-text: #fca5a5;
+  /* ── Surfaces ──────────────────────────────────────────────────────── */
+  /* Ultra-dark with micro violet warmth — less cold than Gemini,
+     less warm than Claude, deeper than ChatGPT. Completely unique. */
+  --bg:         #080810;   /* Near-pure black · faint violet undertone */
+  --bg-card:    #0D0D1E;   /* Card surface · perceptibly lifted          */
+  --header-bg:  #09091A;   /* Header · slightly deeper for separation    */
+
+  /* ── Borders ───────────────────────────────────────────────────────── */
+  --border:        #17183A;  /* Indigo-tinted · barely visible in dark    */
+  --border-light:  #101028;  /* Subtler variant for nested elements       */
+  --border-purple: #2D2F6A;  /* Used for accent borders on cards/badges  */
+
+  /* ── Typography ────────────────────────────────────────────────────── */
+  /* Slight violet-cool tint — warmer than Gemini, crisper than Claude */
+  --text-primary:   #E4E5F5;  /* Signature off-white with violet breath  */
+  --text-secondary: #7D7FA0;  /* Muted violet-grey                       */
+  --text-muted:     #3E4068;  /* Deep muted for timestamps / meta        */
+
+  /* ── Primary accent ────────────────────────────────────────────────── */
+  /* Electric violet-indigo: exactly between Claude's #9333EA
+     and Gemini's #4285F4. Totally ownable by Frontier AI Radar.       */
+  --primary:       #8B8FFF;  /* Vibrant electric violet-indigo           */
+  --primary-hover: #7074F0;  /* Deepens on hover — feels tactile        */
+  --primary-light: rgba(139, 143, 255, 0.11);
+  --accent:        #8B8FFF;
+
+  /* ── Shadows ───────────────────────────────────────────────────────── */
+  --shadow-card: 0 2px 12px rgba(0,0,0,0.8),
+                 0 0 0 1px rgba(139,143,255,0.06),
+                 inset 0 1px 0 rgba(255,255,255,0.03);
+
+  /* ── Status — vivid against deep dark ─────────────────────────────── */
+  --success-bg:          rgba(52, 211, 153, 0.14);
+  --success-text:        #34D399;
+  --error-bg:            rgba(251, 113, 133, 0.14);
+  --error-text:          #FB7185;
+  --status-success-bg:   rgba(52, 211, 153, 0.16);
+  --status-success-text: #34D399;
+  --status-running-bg:   rgba(251, 191, 36, 0.16);
+  --status-running-text: #FBD024;
+  --status-failed-bg:    rgba(251, 113, 133, 0.16);
+  --status-failed-text:  #FB7185;
 }
+
+/* ── Signature ambient glow — the one thing that makes it instantly feel
+   premium. A soft violet halo bleeds down from the top of the viewport,
+   exactly like Gemini's gradient header but subtler and more elegant.
+   A secondary warm accent peeks from the bottom-right corner.
+   ─────────────────────────────────────────────────────────────────── */
+html.dark body {
+  background:
+    radial-gradient(ellipse 90% 28% at 50% -2%,
+      rgba(139, 143, 255, 0.09) 0%, transparent 65%),
+    radial-gradient(ellipse 35% 35% at 92% 98%,
+      rgba(92, 107, 255, 0.06) 0%, transparent 55%),
+    var(--bg);
+}
+
+/* ── Premium scrollbar — thin, dark, barely there ──────────────────── */
+html.dark ::-webkit-scrollbar { width: 5px; height: 5px; }
+html.dark ::-webkit-scrollbar-track { background: transparent; }
+html.dark ::-webkit-scrollbar-thumb {
+  background: #1E1E40;
+  border-radius: 10px;
+}
+html.dark ::-webkit-scrollbar-thumb:hover { background: #2C2C60; }
 
 * { box-sizing: border-box; }
 
@@ -82,9 +141,6 @@ body {
 ::-webkit-scrollbar-track { background: var(--border-light); }
 ::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
-html.dark ::-webkit-scrollbar-track { background: var(--border); }
-html.dark ::-webkit-scrollbar-thumb { background: #4b5563; }
-html.dark ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
 
 @keyframes blink {
   0%, 100% { opacity: 1; }

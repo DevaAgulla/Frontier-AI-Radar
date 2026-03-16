@@ -15,6 +15,7 @@ from agents.base_agent import (
     handle_agent_error,
 )
 from core.tools import read_memory, write_memory, search_entity_memory
+from agents.schemas import StrategyPlanOutput
 from config.settings import settings, load_sources_config
 import json
 import structlog
@@ -97,6 +98,7 @@ _optional_tools = [read_memory, search_entity_memory]
 _react_agent = build_react_agent(
     system_prompt=STRATEGY_PLANNER_CONFIG["system_prompt"],
     tools=_optional_tools,
+    response_format=StrategyPlanOutput,
 )
 
 
@@ -133,8 +135,12 @@ async def strategy_planner_agent(state: RadarState) -> RadarState:
                 STRATEGY_PLANNER_CONFIG["config"]["max_iterations"]
             )},
         )
-        final_text = extract_agent_output(result["messages"])
-        plan = parse_json_object(final_text)
+        structured = result.get("structured_response")
+        if structured is not None:
+            plan = structured.model_dump()
+        else:
+            final_text = extract_agent_output(result["messages"])
+            plan = parse_json_object(final_text)
         logger.info("Strategy Planner: complete")
 
         # Merge new strategy into existing, preserving mission controller values

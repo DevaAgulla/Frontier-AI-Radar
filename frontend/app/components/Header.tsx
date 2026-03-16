@@ -12,8 +12,9 @@ export default function Header() {
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
+    // Default to dark — only switch light if user explicitly chose it
     const stored = globalThis.localStorage?.getItem("theme");
-    const preferDark = stored === "dark" || (stored === null && globalThis.matchMedia?.("(prefers-color-scheme: dark)").matches);
+    const preferDark = stored !== "light";
     setDarkMode(preferDark);
     if (preferDark) globalThis.document.documentElement.classList.add("dark");
     else globalThis.document.documentElement.classList.remove("dark");
