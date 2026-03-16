@@ -217,26 +217,12 @@ async def crawl_page(url: str) -> Dict[str, Any]:
     return await loop.run_in_executor(None, _fetch)
 
 
-def _parse_entry_date(s: str) -> date:
-    """Parse ISO date/datetime string to date. Returns date.min on failure."""
-    if not s:
-        return date.min
-    try:
-        return date.fromisoformat(s[:10])
-    except Exception:
-        return date.min
-
-
 class FetchRssFeedInput(BaseModel):
     url: str = Field(description="The full URL of the RSS or Atom feed to parse")
-    since_date: str = Field(
-        default="",
-        description="ISO date YYYY-MM-DD. Only return entries on or after this date.",
-    )
 
 
 @tool(args_schema=FetchRssFeedInput)
-async def fetch_rss_feed(url: str, since_date: str = "") -> List[Dict[str, Any]]:
+async def fetch_rss_feed(url: str) -> List[Dict[str, Any]]:
     """
     Parse RSS or Atom feed and return list of entries.
     USE THIS FOR: RSS/Atom feeds from blogs, news sites, product changelogs.
@@ -290,24 +276,13 @@ async def fetch_rss_feed(url: str, since_date: str = "") -> List[Dict[str, Any]]
             summary = re.sub(r"<[^>]+>", " ", summary).strip()
             summary = re.sub(r"\s+", " ", summary)
 
-            entry_date = _parse_entry_date(raw_date or "")
-            today = date.today()
-            days_ago = (today - entry_date).days if entry_date != date.min else None
-
             entries.append({
                 "title": getattr(entry, "title", "") or "",
                 "link": getattr(entry, "link", "") or "",
                 "published": raw_date or "",
                 "summary": summary[:500],
                 "author": getattr(entry, "author", "") or "",
-                "days_ago": days_ago,
             })
-
-        # Apply date filter and sort newest-first
-        if since_date:
-            cutoff = _parse_entry_date(since_date)
-            entries = [e for e in entries if _parse_entry_date(e["published"]) >= cutoff]
-        entries.sort(key=lambda e: e["published"], reverse=True)
 
         return entries
 
