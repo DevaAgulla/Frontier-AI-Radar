@@ -405,6 +405,35 @@ def cache_save(
         session.commit()
 
 
+def load_voice_history(session_id: str, limit: int = 150) -> list[dict]:
+    """Return voice-mode messages for a session in chronological order.
+
+    Returns each message with its DB id (used as the IndexedDB audio key base),
+    role, content, and created_at timestamp.
+    """
+    from db.connection import get_session as db_session
+    from sqlalchemy import text
+
+    with db_session() as session:
+        rows = session.execute(text("""
+            SELECT id, role, content, created_at
+            FROM   ai_radar.chat_messages
+            WHERE  session_id = :sid AND mode = 'voice'
+            ORDER  BY created_at ASC
+            LIMIT  :lim
+        """), {"sid": str(session_id), "lim": limit}).fetchall()
+
+    return [
+        {
+            "id":         r[0],
+            "role":       r[1],
+            "content":    r[2],
+            "created_at": r[3].isoformat() if r[3] else None,
+        }
+        for r in rows
+    ]
+
+
 def get_popular_questions(run_id: int, limit: int = 5) -> list[dict]:
     """Top-N most-asked cached questions for a digest — drives dynamic quick prompts."""
     from db.connection import get_session as db_session

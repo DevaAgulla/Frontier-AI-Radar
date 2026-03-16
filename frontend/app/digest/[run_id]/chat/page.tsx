@@ -445,6 +445,7 @@ export default function DigestChatPage() {
             </>
           )}
         </button>
+
       </div>
 
       {/* ── Session loading skeleton ────────────────────────────────────── */}
