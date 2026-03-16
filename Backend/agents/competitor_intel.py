@@ -26,9 +26,10 @@ from core.tools import (
     read_memory,
     write_memory,
     search_entity_memory,
+    search_web,
 )
 from agents.schemas import FindingsOutput
-from config.settings import settings, load_sources_config
+from config.settings import settings
 import structlog
 
 logger = structlog.get_logger()
@@ -71,6 +72,10 @@ Each Finding must have:
   impact_score (0.0), entities, evidence_snippet, needs_verification (false),
   tags, markdown_summary, agent_source ("competitor_intel").
 
+DATE RULE: You must ONLY emit findings where date_detected >= the "Since date" provided.
+Do NOT surface content older than the since date. If a page has no date, use today.
+Set date_detected to the actual published/detected date in ISO format (YYYY-MM-DD).
+
 CRITICAL JSON RULES:
 - Output ONLY the JSON. No text before or after.
 - Do NOT wrap in markdown code fences.
@@ -107,7 +112,7 @@ COMPETITOR_INTEL_CONFIG = {
     },
 }
 
-_optional_tools = [fetch_headless, diff_content, search_entity_memory]
+_optional_tools = [fetch_headless, diff_content, search_entity_memory, search_web]
 
 _react_agent = build_react_agent(
     system_prompt=COMPETITOR_INTEL_CONFIG["system_prompt"],
@@ -135,10 +140,14 @@ async def competitor_intel_agent(state: RadarState) -> RadarState:
 
         url_mode = state.get("url_mode", "default")
         custom_urls = state.get("custom_urls", [])
+        since = state.get("since_timestamp", "")
+        since_date = since[:10] if since else ""
         logger.info("Competitor Intel: Phase 1 — crawling sources",
-                     url_mode=url_mode, custom_urls_count=len(custom_urls))
+                     url_mode=url_mode, custom_urls_count=len(custom_urls),
+                     since_date=since_date)
 
         page_results = []
+        page_hashes: dict = {}
 
         # ── Default / Append: crawl DB sources ────────────────────────
         if url_mode in ("default", "append"):
@@ -147,7 +156,10 @@ async def competitor_intel_agent(state: RadarState) -> RadarState:
 
             for src in competitor_sources:
                 if src.get("type") == "rss":
-                    entries = await fetch_rss_feed.ainvoke({"url": src["url"]})
+                    entries = await fetch_rss_feed.ainvoke({
+                        "url": src["url"],
+                        "since_date": since_date,
+                    })
                     if isinstance(entries, list):
                         page_results.extend(entries)
                 elif src.get("type") == "webpage":
@@ -172,6 +184,33 @@ async def competitor_intel_agent(state: RadarState) -> RadarState:
                     if isinstance(page, dict):
                         page_results.append(page)
 
+        # ── Tavily web search supplement (fills gaps for blocked sites) ─
+        _search_names = ["OpenAI", "Anthropic", "Google DeepMind"]
+        for name in _search_names[:3]:
+            query = f"{name} product release announcement {since_date}"
+            try:
+                results = await search_web.ainvoke({"query": query})
+                if isinstance(results, list):
+                    for r in results:
+                        if r.get("url"):
+                            page_results.append({
+                                "url": r.get("url", ""),
+                                "title": r.get("title", ""),
+                                "content": r.get("snippet", ""),
+                                "date": since_date,
+                                "source": "tavily_search",
+                            })
+            except Exception as exc:
+                logger.warning("Competitor Intel: search_web failed", name=name, error=str(exc))
+
+        # Collect SHA-256 content hashes for all crawled pages (Fix 3)
+        import hashlib as _hashlib
+        for item in page_results:
+            url = item.get("url") or item.get("link", "")
+            content = item.get("content") or item.get("summary", "")
+            if url and content:
+                page_hashes[url] = _hashlib.sha256(content.encode()).hexdigest()
+
         # Mandatory: read_memory (previous content hashes)
         prev_hashes = await read_memory.ainvoke({
             "type": "long_term",
@@ -180,17 +219,18 @@ async def competitor_intel_agent(state: RadarState) -> RadarState:
 
         logger.info("Competitor Intel: Phase 2-3 — Claude reasoning", sources=len(page_results))
 
-        since = state.get("since_timestamp", "")
         strategy = state.get("strategy_plan", {})
 
         user_prompt = (
             f"Crawled competitor sources ({len(page_results)} pages/feeds):\n"
             f"{json.dumps(page_results, indent=2)}\n\n"
             f"Previous content hashes: {json.dumps(prev_hashes)}\n"
-            f"Since date: {since}\n"
+            f"Since date: {since_date}\n"
+            f"Only emit findings where the content was published on or after {since_date}.\n"
             f"Strategy guidance: {json.dumps(strategy.get('agent_instructions', {}).get('competitor_intel', ''))}\n\n"
             "Analyze each source for real product/business changes. "
             "Use diff_content to confirm changes. Use fetch_headless for JS pages. "
+            "Use search_web for targeted follow-up searches if needed. "
             "Check entity memory for context. "
             "Emit the JSON array of competitor Finding objects."
         )
@@ -224,11 +264,12 @@ async def competitor_intel_agent(state: RadarState) -> RadarState:
             "key": "last_competitor_intel_findings",
             "value": json.dumps(findings),
         })
-        new_hashes = {f.get("source_url", ""): f.get("id", "") for f in findings}
+        # Store real SHA-256 content hashes (not finding IDs) so diff_content
+        # has valid old_hash values on the next run.
         await write_memory.ainvoke({
             "type": "long_term",
             "key": "competitor_content_hashes",
-            "value": json.dumps(new_hashes),
+            "value": json.dumps(page_hashes),
         })
 
         logger.info("Competitor Intel: Phase 4 — writing findings", count=len(findings))
