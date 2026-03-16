@@ -291,6 +291,8 @@ export default function VoicePage() {
   const interruptSentRef    = useRef(false);
   const sessionIdRef        = useRef("");          // stable session ID from WS/API
   const assistantTurnRef    = useRef(0);           // next assistant audio key index
+  const userTurnRef         = useRef(0);           // next user audio key index
+  const mediaRecorderRef    = useRef<MediaRecorder | null>(null); // active mic recorder
   const audioStoreRef       = useRef<VoiceAudioStore | null>(null);
   const wsReadyRef          = useRef(false);       // mirror wsReady for callbacks
   const pendingActionRef    = useRef<"greeting" | "listen" | null>(null);
@@ -323,18 +325,29 @@ export default function VoicePage() {
         text:      String(m.content ?? "").replace(/ \[paused\]$/, ""),
         timestamp: m.created_at ? new Date(m.created_at) : undefined,
       }));
-      setTranscripts(msgs);
 
-      // Count assistant turns for audio key sequencing
-      let idx = 0;
+      // IMPORTANT: only replace transcripts when there is real history to show.
+      // If msgs is empty (brand-new session), the WS greeting pipeline may have
+      // already appended a streaming bubble — calling setTranscripts([]) here
+      // would erase it and break capturedTranscriptIdx / audioUrl patching.
+      if (msgs.length > 0) {
+        setTranscripts(msgs);
+      }
+
+      // Count turns for audio key sequencing (assistant keys and user keys)
+      let aIdx = 0, uIdx = 0;
       const audioJobs: { transcriptIdx: number; key: string }[] = [];
       msgs.forEach((m, ti) => {
         if (m.role === "assistant") {
-          audioJobs.push({ transcriptIdx: ti, key: `${data.session_id}-${idx}` });
-          idx++;
+          audioJobs.push({ transcriptIdx: ti, key: `${data.session_id}-${aIdx}` });
+          aIdx++;
+        } else if (m.role === "user") {
+          audioJobs.push({ transcriptIdx: ti, key: `${data.session_id}-user-${uIdx}` });
+          uIdx++;
         }
       });
-      assistantTurnRef.current = idx; // next new turn starts here
+      assistantTurnRef.current = aIdx; // next new assistant turn starts here
+      userTurnRef.current      = uIdx; // next new user turn starts here
 
       // Load cached audio in background — update bubbles as each resolves
       audioJobs.forEach(({ transcriptIdx, key }) => {
@@ -467,6 +480,9 @@ export default function VoicePage() {
   const _disconnect = useCallback(() => {
     _stopBargeIn();
     if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch {} recognitionRef.current = null; }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      try { mediaRecorderRef.current.stop(); } catch {} mediaRecorderRef.current = null;
+    }
     audioPlayerRef.current?.stop();
     if (wsRef.current) {
       const ws = wsRef.current;
@@ -641,14 +657,61 @@ export default function VoicePage() {
     rec.continuous = false; rec.interimResults = true; rec.lang = "en-US"; rec.maxAlternatives = 1;
     recognitionRef.current = rec;
 
+    // ── Capture mic audio for replay (MediaRecorder alongside SpeechRecognition) ─
+    // Fails silently — user still gets full voice interaction, just no replay button.
+    const audioChunks: Blob[] = [];
+    const userTurnIdx = userTurnRef.current;
+    userTurnRef.current += 1;
+    let capturedUserIdx = -1;
+    if (typeof MediaRecorder !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(stream => {
+        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
+        const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        mediaRecorderRef.current = mr;
+        mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+        mr.onstop = async () => {
+          stream.getTracks().forEach(t => t.stop()); // release mic track
+          if (audioChunks.length === 0 || capturedUserIdx < 0) return;
+          try {
+            const blob = new Blob(audioChunks, { type: mr.mimeType || "audio/webm" });
+            const buf  = await blob.arrayBuffer();
+            const key  = `${sessionIdRef.current}-user-${userTurnIdx}`;
+            const url  = await audioStoreRef.current?.save(key, [buf]) ?? null;
+            if (url) {
+              setTranscripts(prev => {
+                const next = [...prev];
+                if (next[capturedUserIdx]) next[capturedUserIdx] = { ...next[capturedUserIdx], audioUrl: url };
+                return next;
+              });
+            }
+          } catch {}
+        };
+        mr.start();
+      }).catch(() => {}); // permission denied or not supported — continue without recording
+    }
+
     let lastInterim = "", finalFired = false;
+    const _stopRecording = () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current = null;
+      }
+    };
     const _submit = (text: string) => {
       setInterimText("");
       if (isStopCommand(text)) {
         setVoiceState("idle"); setStatusLabel("Tap to speak");
+        _stopRecording();
         return;
       }
-      setTranscripts(prev => [...prev, { role: "user", text, timestamp: new Date() }]);
+      setTranscripts(prev => {
+        const next = [...prev, { role: "user" as const, text, timestamp: new Date() }];
+        capturedUserIdx = next.length - 1;
+        return next;
+      });
+      _stopRecording(); // triggers onstop → saves audio to IDB
       wsRef.current?.send(JSON.stringify({ type: "user_text", text }));
       setVoiceState("thinking"); setStatusLabel("Thinking…");
     };
@@ -667,6 +730,7 @@ export default function VoicePage() {
 
     rec.onerror = (e: any) => {
       recognitionRef.current = null; setInterimText("");
+      _stopRecording();
       if (e.error === "not-allowed") {
         setErrorMsg("Microphone access denied. Allow mic in browser settings.");
         setVoiceState("error");
@@ -815,6 +879,7 @@ export default function VoicePage() {
                   : "bg-[var(--bg-card)] border border-[var(--border)] text-[var(--text-primary)] rounded-bl-sm"
               }`}>
                 {t.role === "user" && <span className="mr-1.5 opacity-70 text-xs">🎤</span>}
+                {t.role === "user" && t.audioUrl && <ReplayButton audioUrl={t.audioUrl}/>}
                 {t.text || (t.streaming ? (
                   <span className="flex items-center gap-1.5">
                     <span className="text-xs opacity-60">Thinking</span>
