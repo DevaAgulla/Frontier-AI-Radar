@@ -205,7 +205,8 @@ async def _generate_and_speak(
     invoke_cfg   = {"configurable": {"thread_id": f"voice_{session_id}"}}
 
     # ── Sentence stream → TTS ─────────────────────────────────────────────────
-    api_key  = resolve_elevenlabs_key()
+    from config.settings import settings as _settings
+    api_key  = resolve_elevenlabs_key() if _settings.enable_elevenlabs else None
     voice_id = resolve_voice_id()
 
     full_text  = ""

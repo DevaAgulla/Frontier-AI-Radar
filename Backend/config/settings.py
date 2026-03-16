@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     redis_url: Optional[str] = Field(default=None, env="REDIS_URL")
 
     # Voice Agent — ElevenLabs (TTS)
+    enable_elevenlabs: bool = Field(default=True, env="ENABLE_ELEVENLABS")
     elevenlabs_api_key: Optional[str] = Field(default=None, env="ELEVENLABS_API_KEY")
     elevenlabs_voice_id: str = Field(default="21m00Tcm4TlvDq8ikWAM", env="ELEVENLABS_VOICE_ID")
 
