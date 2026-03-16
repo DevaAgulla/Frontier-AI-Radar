@@ -100,21 +100,46 @@ def create_chat_initial_state(
     chat_query: str,
     chat_session_id: str,
     chat_mode: str = "text",
+    prior_messages: list | None = None,
+    window_context: str | None = None,
 ) -> RadarState:
     """Create a minimal RadarState for chat invocations through the unified graph.
 
-    The graph routes to ``chat_agent`` immediately via ``route_from_start`` because
-    ``chat_query`` is set.  All digest-pipeline fields are empty — they are never
-    read on the chat path.
-
-    The ``messages`` list carries the user turn into the chat subgraph.  LangGraph
-    passes only the shared ``messages`` key to the inner ``create_react_agent``
-    subgraph; all other fields stay in the parent state untouched.
+    Conversation history is injected directly into the ``messages`` channel:
+      - window_context (rolling summary of older turns) as a SystemMessage
+      - prior_messages (last 10 raw turns) as HumanMessage / AIMessage pairs
+      - current user query as the final HumanMessage
     """
-    from langchain_core.messages import HumanMessage
+    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
-    # Prefix with run_db_id so the chat agent knows which digest to load
-    user_content = f"[Digest Run ID: {run_db_id}]\n{chat_query}"
+    messages: list = []
+
+    # Rolling summary of older conversation turns
+    if window_context:
+        messages.append(SystemMessage(
+            content=f"Previous conversation summary:\n{window_context}"
+        ))
+
+    # Session context as system message — tells agent which digest to load
+    # WITHOUT polluting the user message (which would force a digest call every time)
+    messages.append(SystemMessage(
+        content=(
+            f"Active digest run ID: {run_db_id}. "
+            "When a question is about AI news, models, companies, benchmarks, or strategy, "
+            f"call query_digest_state({run_db_id}) to load the intelligence brief. "
+            "For greetings, personal questions, or general knowledge — just respond naturally."
+        )
+    ))
+
+    # Last N raw turns as proper conversational context
+    for m in (prior_messages or []):
+        if m.get("role") == "user":
+            messages.append(HumanMessage(content=m["content"]))
+        elif m.get("role") == "assistant":
+            messages.append(AIMessage(content=m["content"]))
+
+    # Current user message — clean, no prefix
+    messages.append(HumanMessage(content=chat_query))
 
     return {
         "run_id":             f"run_{run_db_id}",
@@ -150,7 +175,7 @@ def create_chat_initial_state(
         "persona_prompt":     None,
         "suggested_questions": None,
         # Shared channel — LangGraph passes this into the chat subgraph
-        "messages":           [HumanMessage(content=user_content)],
+        "messages":           messages,
         # Routing trigger
         "chat_query":         chat_query,
         "chat_session_id":    chat_session_id,
@@ -256,7 +281,13 @@ async def _build_checkpointer():
             qs = {k: v for k, v in parse_qs(parsed.query).items() if k != "options"}
             conn_str = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
 
-        checkpointer = AsyncPostgresSaver.from_conn_string(conn_str)
+        # Use a direct AsyncConnection — no thread pool, no ProactorEventLoop conflict.
+        # AsyncConnectionPool spawns background threads that inherit the wrong loop
+        # on Windows; a single AsyncConnection avoids that entirely.
+        import psycopg
+
+        conn = await psycopg.AsyncConnection.connect(conn_str, autocommit=True)
+        checkpointer = AsyncPostgresSaver(conn)
         # setup() creates the checkpoint tables (idempotent)
         await checkpointer.setup()
         logger.info("LangGraph checkpointer: PostgreSQL ready")

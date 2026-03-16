@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/app/context/AuthContext";
@@ -23,14 +23,56 @@ const DEFAULT_QUICK_PROMPTS = [
 ];
 
 // ── Markdown renderer ─────────────────────────────────────────────────────────
+
+/** Split a plain-text string into runs of text and URLs, return React nodes. */
+function renderInline(text: string, keyPrefix: string) {
+  // Matches [label](url) markdown links OR bare https?:// URLs
+  const URL_RE = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"',;)]+)/g;
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = URL_RE.exec(text)) !== null) {
+    if (m.index > last) nodes.push(text.slice(last, m.index));
+    if (m[2]) {
+      // [label](url) syntax
+      nodes.push(
+        <a key={`${keyPrefix}-${m.index}`} href={m[2]} target="_blank" rel="noopener noreferrer"
+          className="text-[var(--primary)] underline underline-offset-2 hover:opacity-80 break-all">
+          {m[1]}
+        </a>
+      );
+    } else {
+      // bare URL
+      nodes.push(
+        <a key={`${keyPrefix}-${m.index}`} href={m[3]} target="_blank" rel="noopener noreferrer"
+          className="text-[var(--primary)] underline underline-offset-2 hover:opacity-80 break-all">
+          {m[3]}
+        </a>
+      );
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
+
+/** Render a bold-split part, further splitting on URLs inside each segment. */
+function renderBoldAndLinks(content: string, lineKey: number) {
+  const boldParts = content.split(/\*\*(.*?)\*\*/g);
+  return boldParts.map((part, j) =>
+    j % 2 === 1
+      ? <strong key={j} className="font-semibold">{renderInline(part, `${lineKey}-b${j}`)}</strong>
+      : <React.Fragment key={j}>{renderInline(part, `${lineKey}-t${j}`)}</React.Fragment>
+  );
+}
+
 function renderMarkdown(text: string) {
-  return text.split("\n").map((line, i) => {
+  // Hide the machine-readable __SOURCES_JSON__ marker that comes from search_web
+  const cleanText = text.replace(/\n?__SOURCES_JSON__:\[.*?\]/g, "");
+  return cleanText.split("\n").map((line, i) => {
     const isBullet = line.trimStart().startsWith("- ");
     const content  = isBullet ? line.trimStart().slice(2) : line;
-    const parts    = content.split(/\*\*(.*?)\*\*/g);
-    const rendered = parts.map((part, j) =>
-      j % 2 === 1 ? <strong key={j} className="font-semibold">{part}</strong> : part
-    );
+    const rendered = renderBoldAndLinks(content, i);
     if (isBullet) {
       return (
         <div key={i} className="flex gap-2 mt-1.5">
@@ -92,8 +134,8 @@ export default function DigestChatPage() {
 
   // ── Load session + history on mount ────────────────────────────────────
   useEffect(() => {
-    const token   = globalThis.localStorage?.getItem("frontier_ai_radar_token");
-    const userId  = user?.id ? String(user.id) : null;
+    const token  = globalThis.localStorage?.getItem("frontier_ai_radar_token");
+    const userId = user?.id ? String(user.id) : null;
 
     // Load digest metadata in parallel
     fetch("/api/digests", {
@@ -106,7 +148,8 @@ export default function DigestChatPage() {
       })
       .catch(() => {});
 
-    // Load or create session
+    // Load session — backend resolves the right session by (user_id, run_id)
+    // and returns the most recent 10 messages directly from the DB.
     const params = new URLSearchParams({ run_id: String(run_id) });
     if (userId) params.set("user_id", userId);
 
@@ -115,11 +158,8 @@ export default function DigestChatPage() {
     })
       .then(r => r.json())
       .then(data => {
-        if (data.session_id) {
-          setSessionId(data.session_id);
-        }
+        if (data.session_id) setSessionId(data.session_id);
 
-        // Restore prior conversation history
         const prior: Message[] = (data.messages || []).map((m: any) => ({
           role:        m.role,
           content:     m.content,
@@ -128,7 +168,6 @@ export default function DigestChatPage() {
           fromHistory: true,
         }));
 
-        // Merge popular questions with defaults (popular first if they exist)
         if (data.popular_questions?.length) {
           setQuickPrompts([
             ...data.popular_questions.slice(0, 3),
@@ -137,22 +176,11 @@ export default function DigestChatPage() {
         }
 
         if (prior.length > 0) {
-          // Returning user — show history with a visual separator
-          setMessages([
-            ...prior,
-            {
-              role:      "assistant",
-              content:   `Welcome back! I can see our previous conversation above. Feel free to continue or ask something new.`,
-              timestamp: new Date(),
-            },
-          ]);
+          setMessages(prior);
         } else {
-          // First visit — show welcome message
           setMessages([{
             role:      "assistant",
-            content:   digestInfo
-              ? `Hello! I've loaded the AI Intelligence Brief with **${digestInfo.findings_count} findings**.\n\nAsk me anything or pick a prompt below.`
-              : `Hello! I'm your AI intelligence analyst. Ask me anything about this digest.`,
+            content:   `Hello! I'm your AI intelligence analyst. Ask me anything about this digest.`,
             timestamp: new Date(),
           }]);
         }

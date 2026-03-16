@@ -21,7 +21,8 @@
       "WebFetch(domain:forum.langchain.com)",
       "WebFetch(domain:www.baihezi.com)",
       "WebFetch(domain:reference.langchain.com)",
-      "WebFetch(domain:harshaselvi.medium.com)"
+      "WebFetch(domain:harshaselvi.medium.com)",
+      "Bash(\"c:\\\\Users\\\\RathlavathRameshnaya\\\\Videos\\\\InternalHackathon\\\\python-venv\\\\Scripts\\\\pip.exe\" show:*)"
     ]
   }
 }

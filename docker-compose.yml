@@ -1,0 +1,136 @@
+version: "3.9"
+
+# ── Frontier AI Radar — Production Topology ──────────────────────────────────
+#
+#  api         ×2 — stateless FastAPI pods (read + chat only, no pipeline)
+#  worker      ×2 — Celery digest workers (LangGraph pipeline)
+#  audio       ×1 — Celery audio+blob worker (ElevenLabs + Azure)
+#  beat        ×1 — Celery beat scheduler (replaces APScheduler)
+#  redis       ×1 — broker + result backend + L1 cache
+#  postgres    ×1 — primary DB (replace with managed Azure PG in production)
+#  nginx       ×1 — load balancer / reverse proxy
+
+services:
+
+  # ── Postgres ────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB:       frontier_radar
+      POSTGRES_USER:     radar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U radar"]
+      interval: 10s
+      retries: 5
+
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 5
+
+  # ── API pods (×2, stateless) ─────────────────────────────────────────────────
+  api:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    command: python run.py --port 8000 --no-reload
+    restart: always
+    deploy:
+      replicas: 2
+    env_file: ./Backend/.env
+    environment:
+      DATABASE_URL: postgresql://radar:${POSTGRES_PASSWORD}@postgres:5432/frontier_radar
+      REDIS_URL:    redis://redis:6379/0
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      retries: 3
+
+  # ── Digest workers (×2) ──────────────────────────────────────────────────────
+  # --pool=solo: each process runs its own asyncio event loop (LangGraph requirement)
+  # -c 1:        one concurrent task per process — pipeline is CPU+network intensive
+  worker:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    command: >
+      celery -A workers.celery_app worker
+        -Q digest_q
+        -c 1
+        --pool=solo
+        -l info
+        -n worker@%h
+    restart: always
+    deploy:
+      replicas: 2
+    env_file: ./Backend/.env
+    environment:
+      DATABASE_URL: postgresql://radar:${POSTGRES_PASSWORD}@postgres:5432/frontier_radar
+      REDIS_URL:    redis://redis:6379/0
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+
+  # ── Audio + blob worker (×1, I/O bound) ─────────────────────────────────────
+  audio:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    command: >
+      celery -A workers.celery_app worker
+        -Q audio_q,blob_q
+        -c 2
+        -l info
+        -n audio@%h
+    restart: always
+    env_file: ./Backend/.env
+    environment:
+      DATABASE_URL: postgresql://radar:${POSTGRES_PASSWORD}@postgres:5432/frontier_radar
+      REDIS_URL:    redis://redis:6379/0
+    depends_on:
+      redis: { condition: service_healthy }
+
+  # ── Beat scheduler (×1 — must be singleton) ──────────────────────────────────
+  beat:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    command: celery -A workers.celery_app beat -l info --scheduler celery.beat.PersistentScheduler
+    restart: always
+    env_file: ./Backend/.env
+    environment:
+      DATABASE_URL: postgresql://radar:${POSTGRES_PASSWORD}@postgres:5432/frontier_radar
+      REDIS_URL:    redis://redis:6379/0
+    depends_on:
+      redis: { condition: service_healthy }
+
+  # ── Nginx load balancer ──────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+
+volumes:
+  pg_data:
+  redis_data:

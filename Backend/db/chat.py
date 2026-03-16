@@ -42,12 +42,31 @@ def _hash(text: str) -> str:
     return hashlib.sha256(text.strip().lower().encode()).hexdigest()
 
 
+# ── Schema migration (idempotent) ─────────────────────────────────────────────
+
+def ensure_chat_schema() -> None:
+    """Add window_context column to chat_sessions if it doesn't exist yet.
+
+    Safe to call on every startup — ADD COLUMN IF NOT EXISTS is idempotent.
+    """
+    from db.connection import get_session as db_session
+    from sqlalchemy import text
+
+    with db_session() as session:
+        session.execute(text("""
+            ALTER TABLE ai_radar.chat_sessions
+            ADD COLUMN IF NOT EXISTS window_context TEXT
+        """))
+        session.commit()
+    logger.info("chat_schema: window_context column ensured")
+
+
 # ── Session ───────────────────────────────────────────────────────────────────
 
 def get_or_create_session(run_id: int, user_id: Optional[int]) -> dict:
     """
-    Return the existing chat session for (user_id, run_id) or create one.
-    Anonymous users (user_id=None) always get a fresh session.
+    Return the most-recently-active existing chat session for (user_id, run_id)
+    or create one.  Anonymous users (user_id=None) always get a fresh session.
     """
     from db.connection import get_session as db_session
     from sqlalchemy import text
@@ -55,19 +74,21 @@ def get_or_create_session(run_id: int, user_id: Optional[int]) -> dict:
     with db_session() as session:
         if user_id:
             row = session.execute(text("""
-                SELECT id, message_count, created_at, last_active
+                SELECT id, message_count, created_at, last_active, window_context
                 FROM   ai_radar.chat_sessions
                 WHERE  user_id = :uid AND run_id = :rid
+                ORDER  BY last_active DESC NULLS LAST
                 LIMIT  1
             """), {"uid": user_id, "rid": run_id}).fetchone()
 
             if row:
                 return {
-                    "session_id":    str(row[0]),
-                    "message_count": row[1],
-                    "created_at":    row[2].isoformat() if row[2] else None,
-                    "last_active":   row[3].isoformat() if row[3] else None,
-                    "is_new":        False,
+                    "session_id":     str(row[0]),
+                    "message_count":  row[1],
+                    "created_at":     row[2].isoformat() if row[2] else None,
+                    "last_active":    row[3].isoformat() if row[3] else None,
+                    "window_context": row[4],
+                    "is_new":         False,
                 }
 
         result = session.execute(text("""
@@ -112,6 +133,51 @@ def load_session_messages(session_id: str, limit: int = 50) -> list[dict]:
     ]
 
 
+def get_recent_messages_for_run(
+    user_id: int,
+    run_id: int,
+    limit: int = 10,
+) -> tuple[list[dict], str | None]:
+    """
+    Return the most-recent `limit` messages for (user_id, run_id) by JOINing
+    chat_sessions → chat_messages directly.  No session_id needed by the caller.
+
+    Returns (messages_chronological, session_id_str).
+    Messages are returned oldest-first so the UI can display them top-to-bottom.
+    """
+    from db.connection import get_session as db_session
+    from sqlalchemy import text
+
+    with db_session() as session:
+        rows = session.execute(text("""
+            SELECT m.role, m.content, m.sources, m.mode, m.created_at,
+                   s.id::text AS session_id
+            FROM   ai_radar.chat_messages  m
+            JOIN   ai_radar.chat_sessions  s ON s.id = m.session_id
+            WHERE  s.user_id = :uid
+              AND  s.run_id  = :rid
+            ORDER  BY m.created_at DESC
+            LIMIT  :lim
+        """), {"uid": user_id, "rid": run_id, "lim": limit}).fetchall()
+
+    if not rows:
+        return [], None
+
+    session_id = rows[0][5]
+    # Reverse so oldest is first (chronological display order)
+    messages = [
+        {
+            "role":      r[0],
+            "content":   r[1],
+            "sources":   r[2] if r[2] else [],
+            "mode":      r[3],
+            "timestamp": r[4].isoformat() if r[4] else None,
+        }
+        for r in reversed(rows)
+    ]
+    return messages, session_id
+
+
 def save_message(
     session_id: str,
     role: str,
@@ -119,8 +185,12 @@ def save_message(
     sources: Optional[list] = None,
     mode: str = "text",
     tool_calls: Optional[list] = None,
-) -> None:
-    """Persist one message turn and bump session.message_count + last_active."""
+) -> int:
+    """Persist one message turn and bump session.message_count + last_active.
+
+    Returns the updated message_count so the caller can trigger summarization
+    when count % 5 == 0.
+    """
     from db.connection import get_session as db_session
     from sqlalchemy import text
 
@@ -140,12 +210,49 @@ def save_message(
             "tools":   json.dumps(tool_calls or []),
             "mode":    mode,
         })
-        session.execute(text("""
+        row = session.execute(text("""
             UPDATE ai_radar.chat_sessions
             SET    message_count = message_count + 1,
                    last_active   = NOW()
             WHERE  id = :sid
-        """), {"sid": session_id})
+            RETURNING message_count
+        """), {"sid": session_id}).fetchone()
+        session.commit()
+    return row[0] if row else 0
+
+
+def get_recent_messages(session_id: str, limit: int = 10) -> list[dict]:
+    """Return last `limit` messages in chronological order (oldest first)."""
+    from db.connection import get_session as db_session
+    from sqlalchemy import text
+
+    with db_session() as session:
+        rows = session.execute(text("""
+            SELECT role, content, created_at
+            FROM (
+                SELECT role, content, created_at
+                FROM   ai_radar.chat_messages
+                WHERE  session_id = :sid
+                ORDER  BY created_at DESC
+                LIMIT  :lim
+            ) sub
+            ORDER BY created_at ASC
+        """), {"sid": session_id, "lim": limit}).fetchall()
+
+    return [{"role": r[0], "content": r[1]} for r in rows]
+
+
+def update_window_context(session_id: str, summary: str) -> None:
+    """Persist the rolling conversation summary into chat_sessions."""
+    from db.connection import get_session as db_session
+    from sqlalchemy import text
+
+    with db_session() as session:
+        session.execute(text("""
+            UPDATE ai_radar.chat_sessions
+            SET    window_context = :summary
+            WHERE  id = :sid
+        """), {"sid": session_id, "summary": summary})
         session.commit()
 
 

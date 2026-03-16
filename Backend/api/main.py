@@ -1,9 +1,16 @@
 """Frontier AI Radar — Simple FastAPI entry point."""
 
+import sys
+import asyncio
+
+# psycopg v3 (used by LangGraph checkpointer) is incompatible with Windows
+# ProactorEventLoop.  Force SelectorEventLoop on Windows before anything else loads.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 import os
 import re
 import json
-import asyncio
 import hashlib
 import secrets
 import uvicorn
@@ -29,7 +36,14 @@ from pipeline.runner import (
     create_chat_initial_state,
     VALID_AGENTS,
 )
-from pipeline.scheduler import start_scheduler, stop_scheduler
+# APScheduler replaced by Celery beat — import kept for backwards-compat fallback
+try:
+    from pipeline.scheduler import start_scheduler, stop_scheduler
+    _apscheduler_available = True
+except ImportError:
+    _apscheduler_available = False
+    def start_scheduler(): pass
+    def stop_scheduler():  pass
 from db.connection import init_db, get_session
 from db.models import Run, Extraction, Finding, Resource, User, Competitor
 from config.settings import settings
@@ -40,11 +54,32 @@ logger = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: initialise SQLite DB + start daily cron scheduler."""
+    """Startup: initialise DB, run schema migrations.
+
+    Scheduling is handled by Celery beat (external process).
+    APScheduler is started only when Celery is not available (dev / single-server).
+    """
     init_db()
-    start_scheduler()
+    from db.chat import ensure_chat_schema
+    ensure_chat_schema()
+
+    # Start APScheduler only when Celery beat is not running this deployment
+    celery_beat_running = False
+    try:
+        from workers.celery_app import celery_app as _ca
+        # Quick broker ping — if it succeeds, beat handles scheduling
+        _ca.control.ping(timeout=1)
+        celery_beat_running = True
+    except Exception:
+        pass
+
+    if not celery_beat_running and _apscheduler_available:
+        start_scheduler()
+
     yield
-    stop_scheduler()
+
+    if not celery_beat_running and _apscheduler_available:
+        stop_scheduler()
 
 
 app = FastAPI(title="Frontier AI Radar API", lifespan=lifespan)
@@ -595,12 +630,15 @@ async def run(req: RunRequest):
 async def run_async(req: RunRequest):
     """
     Fire-and-forget run trigger.
-    Returns immediately with run_db_id/status=running while pipeline executes in background.
+
+    Enqueues the pipeline as a Celery task (digest → audio → blob chain).
+    Returns immediately with run_db_id so the frontend can poll for status.
+    Falls back to in-process asyncio.create_task if Celery is unavailable.
     """
     if req.url_mode == "custom" and not req.urls:
         raise HTTPException(
             status_code=400,
-            detail="url_mode is 'custom' but no URLs provided. Pass at least one URL in the 'urls' field.",
+            detail="url_mode is 'custom' but no URLs provided.",
         )
 
     started_at = datetime.now(timezone.utc).isoformat()
@@ -614,6 +652,8 @@ async def run_async(req: RunRequest):
         "email_recipients": email_recipients,
     }
 
+    # Create DB rows first so the frontend has a run_id to poll immediately
+    from pipeline.runner import prepare_radar_run
     initial_state = prepare_radar_run(
         mode=req.mode,
         since_days=req.since_days,
@@ -625,23 +665,50 @@ async def run_async(req: RunRequest):
         url_mode=req.url_mode,
     )
     run_db_id = initial_state.get("run_db_id")
-    run_id = initial_state.get("run_id", "")
+    run_id    = initial_state.get("run_id", "")
 
-    async def _runner_task(state):
-        try:
-            await execute_prepared_radar(state)
-        finally:
-            if run_db_id in _background_runs:
+    # ── Enqueue via Celery if available, otherwise fall back to asyncio ──
+    celery_available = False
+    try:
+        from workers.tasks import run_digest_pipeline, generate_audio_task, upload_blob_task
+        from cache.redis_client import invalidate_digest_cache
+        if run_db_id:
+            invalidate_digest_cache(run_db_id)
+        (
+            run_digest_pipeline.s(
+                run_db_id=run_db_id,
+                mode=req.mode,
+                since_days=req.since_days,
+                email_recipients=email_recipients,
+                custom_urls=req.urls or [],
+                url_mode=req.url_mode,
+            )
+            | generate_audio_task.s()
+            | upload_blob_task.s()
+        ).apply_async()
+        celery_available = True
+        logger.info("run_enqueued_celery", run_db_id=run_db_id)
+    except Exception as _ce:
+        logger.warning("celery_unavailable_fallback_asyncio", error=str(_ce))
+
+    if not celery_available:
+        # Fallback: run in-process (single-server / dev mode)
+        from pipeline.runner import execute_prepared_radar
+
+        async def _runner_task(state):
+            try:
+                await execute_prepared_radar(state)
+            finally:
                 _background_runs.pop(run_db_id, None)
 
-    task = asyncio.create_task(_runner_task(initial_state))
-    if run_db_id:
-        _background_runs[run_db_id] = task
+        task = asyncio.create_task(_runner_task(initial_state))
+        if run_db_id:
+            _background_runs[run_db_id] = task
 
     return RunResponse(
         run_db_id=run_db_id,
         run_id=run_id,
-        status="running",
+        status="queued" if celery_available else "running",
         mode=req.mode,
         started_at=started_at,
         finished_at=None,
@@ -1072,6 +1139,21 @@ async def get_runs(
 
 @app.get("/api/v1/runs/{run_id}")
 async def get_run_detail(run_id: int):
+    # ── L1: Redis digest cache — served in ~2ms, skips all DB queries ────
+    from cache.redis_client import get_digest_cache
+    cached = get_digest_cache(run_id)
+    if cached:
+        return {
+            "run_id":          run_id,
+            "status":          "success",
+            "cache_hit":       True,
+            "digest_json":     cached.get("digest_json", {}),
+            "digest_markdown": cached.get("digest_markdown", ""),
+            "ranked_findings": cached.get("ranked_findings", []),
+            "findings_count":  len(cached.get("ranked_findings", [])),
+            "errors_count":    cached.get("errors_count", 0),
+        }
+
     with get_session() as session:
         run = session.query(Run).filter(Run.id == run_id).first()
         if not run:
@@ -1976,51 +2058,40 @@ async def get_chat_session(
     user_id: Optional[int] = Query(default=None),
 ):
     """
-    Get-or-create a chat session for (user_id, run_id).
+    Get-or-create a chat session for (user_id, run_id) and return the most
+    recent 10 messages from the DB.
 
-    Message history priority:
-      1. LangGraph checkpoint (thread_id = "chat_{session_id}") — source of truth
-         for all sessions after the LangGraph migration.
-      2. Redis warm cache — fast path for sessions still using the old store.
-      3. PostgreSQL chat_messages table — legacy fallback.
+    For authenticated users the most-recently-active session for (user_id,
+    run_id) is found directly via a JOIN — no client-side session_id needed.
     """
-    from db.chat import get_or_create_session, load_session_messages, get_popular_questions
-    from cache.redis_client import rget_messages, rwarm_messages, TTL_SESSION_LOOKUP
+    from db.chat import (
+        get_or_create_session,
+        get_recent_messages_for_run,
+        get_popular_questions,
+    )
 
-    session_info = get_or_create_session(run_id=run_id, user_id=user_id)
-    session_id   = session_info["session_id"]
+    messages: list = []
+    session_id: Optional[str] = None
+    is_new = False
 
+    # ── Authenticated: pull the 10 most recent messages straight from DB ──
     if user_id:
-        from cache.redis_client import rset
-        rset(f"chat:user:{user_id}:run:{run_id}", session_id, TTL_SESSION_LOOKUP)
+        messages, session_id = get_recent_messages_for_run(
+            user_id=user_id, run_id=run_id, limit=10
+        )
 
-    # ── 1. LangGraph checkpoint (primary) ─────────────────────────────────
-    messages = []
-    radar_graph = await _get_chat_graph()
-    if radar_graph:
-        try:
-            snap = await radar_graph.aget_state(
-                {"configurable": {"thread_id": f"chat_{session_id}"}}
-            )
-            if snap and snap.values.get("messages"):
-                messages = _lg_messages_to_chat_format(snap.values["messages"])
-        except Exception as exc:
-            logger.warning("chat_history_checkpoint_failed", error=str(exc))
-
-    # ── 2+3. Redis / DB fallback for pre-migration sessions ───────────────
-    if not messages:
-        messages = rget_messages(session_id) or []
-    if not messages:
-        messages = load_session_messages(session_id, limit=50)
-        if messages:
-            rwarm_messages(session_id, messages)
+    # ── Resolve / create session row ──────────────────────────────────────
+    if not session_id:
+        session_info = get_or_create_session(run_id=run_id, user_id=user_id)
+        session_id   = session_info["session_id"]
+        is_new       = session_info["is_new"]
 
     popular = get_popular_questions(run_id=run_id, limit=5)
 
     return {
         "session_id":        session_id,
-        "is_new":            session_info["is_new"],
-        "message_count":     session_info["message_count"],
+        "is_new":            is_new,
+        "message_count":     len(messages),
         "messages":          messages,
         "popular_questions": [p["question"] for p in popular],
     }
@@ -2084,44 +2155,57 @@ async def chat_ask(req: ChatAskRequest):
         info       = get_or_create_session(run_id=run_id_int, user_id=req.user_id)
         session_id = info["session_id"]
 
-    # ── L1: Redis exact-match ─────────────────────────────────────────────
+    # ── Load conversation context first — needed for cache bypass decision ─
+    from db.chat import get_recent_messages
+    session_ctx    = get_or_create_session(run_id=run_id_int, user_id=req.user_id)
+    window_context = session_ctx.get("window_context")
+    prior_messages = get_recent_messages(session_id, limit=10)
+    has_history    = bool(prior_messages)
+
+    # ── L1/L2/L3 cache — SKIP when conversation history exists ────────────
+    # Cache keys are global per (run_id, question_hash) — they have no session
+    # context. A cached "what is my name" answer from session A must never be
+    # served to session B. Any question that can reference prior turns is
+    # context-dependent and must go through the LLM every time.
     q_hash = _hash(req.message)
-    cached = get_cached_answer(run_id_int, q_hash)
-    if cached:
-        logger.info("chat_cache_hit", level="L1_redis", session=session_id)
-        if req.mode == "voice":
-            return await _make_voice_response(cached["answer"], cached.get("sources", []))
-        return _make_sse_response(cached["answer"], cached.get("sources", []))
+    if not has_history:
+        cached = get_cached_answer(run_id_int, q_hash)
+        if cached:
+            logger.info("chat_cache_hit", level="L1_redis", session=session_id)
+            if req.mode == "voice":
+                return await _make_voice_response(cached["answer"], cached.get("sources", []))
+            return _make_sse_response(cached["answer"], cached.get("sources", []))
 
-    # ── L2: DB exact-match ────────────────────────────────────────────────
-    cached = cache_lookup_exact(run_id_int, req.message)
-    if cached:
-        logger.info("chat_cache_hit", level="L2_db_exact", session=session_id)
-        set_cached_answer(run_id_int, q_hash, cached)
-        if req.mode == "voice":
-            return await _make_voice_response(cached["answer"], cached.get("sources", []))
-        return _make_sse_response(cached["answer"], cached.get("sources", []))
+        cached = cache_lookup_exact(run_id_int, req.message)
+        if cached:
+            logger.info("chat_cache_hit", level="L2_db_exact", session=session_id)
+            set_cached_answer(run_id_int, q_hash, cached)
+            if req.mode == "voice":
+                return await _make_voice_response(cached["answer"], cached.get("sources", []))
+            return _make_sse_response(cached["answer"], cached.get("sources", []))
 
-    # ── L3: Semantic similarity ───────────────────────────────────────────
-    cached = cache_lookup_semantic(run_id_int, req.message)
-    if cached:
-        logger.info("chat_cache_hit", level="L3_semantic",
-                    sim=cached["cache_hit"], session=session_id)
-        set_cached_answer(run_id_int, q_hash, cached)
-        if req.mode == "voice":
-            return await _make_voice_response(cached["answer"], cached.get("sources", []))
-        return _make_sse_response(cached["answer"], cached.get("sources", []))
+        cached = cache_lookup_semantic(run_id_int, req.message)
+        if cached:
+            logger.info("chat_cache_hit", level="L3_semantic",
+                        sim=cached["cache_hit"], session=session_id)
+            set_cached_answer(run_id_int, q_hash, cached)
+            if req.mode == "voice":
+                return await _make_voice_response(cached["answer"], cached.get("sources", []))
+            return _make_sse_response(cached["answer"], cached.get("sources", []))
+    else:
+        logger.info("chat_cache_bypass", reason="conversation_history_exists",
+                    session=session_id, prior_count=len(prior_messages))
 
     # ── L4: Unified LangGraph radar graph → chat_agent node ──────────────
     radar_graph = await _get_chat_graph()
     if not radar_graph:
         raise HTTPException(status_code=503, detail="Chat graph not available")
 
-    # Build minimal RadarState — route_from_start sees chat_query → goes to chat_agent.
-    # The HumanMessage is in the shared "messages" key; LangGraph passes it directly
-    # into the create_react_agent subgraph.  Conversation history for this session
-    # is checkpointed under thread_id = "chat_{session_id}" in PostgreSQL.
-    chat_state   = create_chat_initial_state(run_id_int, req.message, session_id, req.mode)
+    chat_state   = create_chat_initial_state(
+        run_id_int, req.message, session_id, req.mode,
+        prior_messages=prior_messages,
+        window_context=window_context,
+    )
     agent_config = {"configurable": {"thread_id": f"chat_{session_id}"}}
 
     # ── Voice mode — collect full response then TTS ───────────────────────
@@ -2146,13 +2230,17 @@ async def chat_ask(req: ChatAskRequest):
         asyncio.create_task(
             _save_to_cache(run_id_int, req.message, response_text, [], req.mode)
         )
+        from db.chat import save_message
+        try:
+            save_message(session_id, "user", req.message, mode=req.mode)
+            count = save_message(session_id, "assistant", response_text, mode=req.mode)
+            if count % 5 == 0:
+                asyncio.create_task(_summarise_and_update(session_id, count))
+        except Exception as _e:
+            logger.warning("chat_save_message_failed", error=str(_e))
         return await _make_voice_response(response_text, [])
 
     # ── Text mode — streaming SSE via astream_events ─────────────────────
-    # astream_events(version="v2") propagates on_chat_model_stream events from
-    # the inner create_react_agent subgraph — no extra work needed.
-    # Filter on langgraph_node="chat_agent" to avoid spurious events if the
-    # graph is ever extended with other nodes that also call an LLM.
     async def _token_stream():
         full_text   = ""
         source_urls: List[str] = []
@@ -2163,19 +2251,12 @@ async def chat_ask(req: ChatAskRequest):
                 kind      = event["event"]
                 node_name = event.get("metadata", {}).get("langgraph_node", "")
 
-                # Token-by-token from the chat_agent subgraph LLM.
-                # In astream_events v2, events emitted INSIDE a compiled subgraph
-                # carry the inner node name ("agent") in langgraph_node, not the
-                # outer node name ("chat_agent").  In chat mode only one LLM runs,
-                # so accepting all on_chat_model_stream events is safe.
                 if kind == "on_chat_model_stream":
                     token = event["data"]["chunk"].content
                     if token:
                         full_text += token
                         yield f"data: {json.dumps({'token': token})}\n\n"
 
-                # Notify frontend when tools fire inside the chat_agent subgraph.
-                # Inner tool node is named "tools" by create_react_agent.
                 elif kind == "on_tool_start" and node_name in ("tools", "chat_agent"):
                     tool_name = event.get("name", "")
                     if tool_name == "search_web":
@@ -2183,12 +2264,25 @@ async def chat_ask(req: ChatAskRequest):
                     elif tool_name == "query_digest_state":
                         yield f"data: {json.dumps({'status': 'Loading digest context...'})}\n\n"
 
-                # Harvest web source URLs from search_web tool output
                 elif kind == "on_tool_end" and event.get("name") == "search_web":
                     output = str(event["data"].get("output", ""))
-                    for url in re.findall(r"Source:\s*(https?://\S+)", output):
-                        if url not in source_urls:
-                            source_urls.append(url)
+                    # Primary: extract from the structured JSON block appended by search_web
+                    json_match = re.search(r"__SOURCES_JSON__:(\[.*?\])", output)
+                    if json_match:
+                        try:
+                            extracted = json.loads(json_match.group(1))
+                            for url in extracted:
+                                url = url.strip().rstrip(".,;:)>]\"'")
+                                if url and url not in source_urls:
+                                    source_urls.append(url)
+                        except Exception:
+                            pass
+                    else:
+                        # Fallback: regex over "Source: URL" lines, strip trailing punctuation
+                        for url in re.findall(r"Source:\s*(https?://\S+)", output):
+                            url = re.sub(r'[.,;:)\]>"\']+$', '', url).strip()
+                            if url and url not in source_urls:
+                                source_urls.append(url)
 
             yield f"data: {json.dumps({'done': True, 'sources': source_urls, 'session_id': session_id})}\n\n"
 
@@ -2196,6 +2290,19 @@ async def chat_ask(req: ChatAskRequest):
                 asyncio.create_task(
                     _save_to_cache(run_id_int, req.message, full_text, source_urls, req.mode)
                 )
+                # Save messages to DB synchronously so next request has history
+                # Summary generation (every 5 msgs) runs in background — it's the slow part
+                from db.chat import save_message, load_session_messages, update_window_context
+                try:
+                    save_message(session_id, "user", req.message, mode=req.mode)
+                    count = save_message(session_id, "assistant", full_text,
+                                         sources=source_urls, mode=req.mode)
+                    if count % 5 == 0:
+                        asyncio.create_task(
+                            _summarise_and_update(session_id, count)
+                        )
+                except Exception as _e:
+                    logger.warning("chat_save_message_failed", error=str(_e))
 
         except Exception as exc:
             logger.error("chat_ask_stream_error", error=str(exc))
@@ -2225,6 +2332,44 @@ async def _save_to_cache(
                            "tool_calls_used": [], "cache_hit": "fresh"})
     except Exception as exc:
         logger.warning("cache_save_failed", error=str(exc))
+
+
+async def _summarise_and_update(session_id: str, msg_count: int) -> None:
+    """Background task: generate a rolling conversation summary every 5 messages."""
+    from db.chat import load_session_messages, update_window_context
+    try:
+        messages = load_session_messages(session_id, limit=30)
+        if not messages:
+            return
+
+        convo = "\n".join(
+            f"{m['role'].upper()}: {m['content'][:400]}"
+            for m in messages
+        )
+        summary_prompt = (
+            "Summarise this conversation in under 150 words. "
+            "Capture: key topics discussed, findings referenced, user's name if mentioned, "
+            "user interests, and any follow-up questions. Be concise and factual.\n\n"
+            f"Conversation:\n{convo}\n\nSummary:"
+        )
+
+        from langchain_openai import ChatOpenAI
+        from config.settings import settings
+        llm = ChatOpenAI(
+            model=settings.openrouter_model,
+            openai_api_key=settings.openrouter_api_key,
+            openai_api_base=settings.openrouter_base_url,
+            temperature=0.0,
+            max_tokens=200,
+        )
+        result  = await llm.ainvoke(summary_prompt)
+        summary = result.content.strip()
+        update_window_context(session_id, summary)
+        logger.info("chat_window_context_updated",
+                    session_id=session_id, msg_count=msg_count, length=len(summary))
+
+    except Exception as exc:
+        logger.warning("summarise_failed", error=str(exc))
 
 
 def _make_sse_response(answer: str, sources: List[str]) -> StreamingResponse:

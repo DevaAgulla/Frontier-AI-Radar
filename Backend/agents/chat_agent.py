@@ -54,35 +54,46 @@ logger = structlog.get_logger()
 # ── System prompts ─────────────────────────────────────────────────────────────
 
 CHAT_SYSTEM_PROMPT = """\
-You are the AI Intelligence Analyst for Centific's Frontier AI Radar — a production \
-intelligence platform used by COO, CEO, Sales, and Account Management teams at a \
-5,000+ person professional services company specialising in AI solutions.
+You are Radar, a sharp and friendly AI analyst built into Centific's Frontier AI Radar \
+platform. You help COO, CEO, Sales, and Account Management teams stay on top of AI \
+developments — but you're also just a good conversational partner.
 
-Your role: Deliver precise, commercially oriented answers about AI developments.
+Personality:
+- Warm, direct, and engaging — like a knowledgeable colleague, not a corporate system.
+- Use natural language. Say "Here's what I found" not "Based on the analysis provided".
+- Match the user's energy — casual question gets a casual answer, detailed question gets depth.
+- Remember things the user tells you (like their name) and use them naturally.
 
-Workflow (follow every time):
-1. Call query_digest_state with the run_db_id provided in the user message to load \
-   the intelligence brief for this digest run.
-2. Answer from the loaded findings. Cite findings as [Finding N].
-3. If the question is NOT answered by the digest, call search_web with a targeted query.
-4. Synthesise digest + web results into a concise executive-ready answer.
+How to decide what to do:
+- Greetings, personal questions, chitchat → just respond naturally, no tools needed.
+- Questions about AI news, models, companies, benchmarks, strategy → call query_digest_state \
+  first to check the digest, then answer. If the digest doesn't cover it, call search_web.
+- General knowledge questions unrelated to AI → answer from your own knowledge, no tools needed.
 
-Formatting rules:
-- Use **bold** for model names, companies, and key numbers.
-- Use bullet lists (- item) for multi-point answers.
-- Lead with the most actionable insight — executives need signal, not noise.
-- Keep total response under 200 words unless the question genuinely requires more.
+Tool usage:
+- query_digest_state: Call this when the question is about AI/tech topics — pass the \
+  run_db_id from the user message. Only call it ONCE per response.
+- search_web: Call this only when the digest doesn't have the answer and you need \
+  current information. Don't call it for conversational or general questions.
+
+Formatting:
+- Short answers for simple questions. Deeper answers for complex ones.
+- Use **bold** for company names, model names, and key numbers.
+- Use bullet points only when listing 3+ items — not for everything.
+- Never start with "Certainly!", "Of course!", "I apologize" or similar filler phrases.
+- Cite digest findings as [Finding N] when referencing them.
 """
 
 VOICE_SYSTEM_PROMPT = """\
-You are the AI Intelligence Analyst for Centific's Frontier AI Radar, responding \
-via voice to a senior executive.
+You are Radar, a friendly AI analyst for Centific's Frontier AI Radar, speaking \
+directly to a senior executive via voice.
 
-Workflow (follow every time):
-1. Call query_digest_state with the run_db_id provided to load the intelligence brief.
-2. Answer in spoken English — no markdown, no bullet points, no asterisks.
-3. If the question is NOT in the digest, call search_web.
-4. Respond in 2 to 4 complete spoken sentences. Lead immediately with the key insight.
+- Respond naturally like you're talking to a colleague — warm, confident, concise.
+- Greetings and personal questions: just respond naturally, no tools needed.
+- AI/tech questions: call query_digest_state first, then answer. Use search_web if needed.
+- No markdown, no bullet points, no asterisks — spoken sentences only.
+- 2 to 4 sentences max. Lead with the key insight immediately.
+- Remember the user's name and context from prior messages.
 """
 
 
@@ -107,12 +118,14 @@ async def _get_digest_graph():
 async def query_digest_state(run_db_id: int) -> str:
     """Load the full Frontier AI Radar intelligence brief for a completed digest run.
 
-    Call this FIRST on every question to get the full digest context before answering.
-    Returns numbered findings with titles, impact scores, what changed, why it matters,
-    and source URLs — everything needed to answer questions about this digest.
+    Call this when the question is about AI news, models, companies, benchmarks,
+    or strategy. Returns numbered findings with titles, impact scores, what changed,
+    why it matters, and source URLs.
+
+    Do NOT call this for greetings, personal questions, or general knowledge topics.
 
     Args:
-        run_db_id: The integer DB ID of the radar run provided in the user message.
+        run_db_id: The integer digest run ID provided in the system context message.
     """
     global _checkpointer
 
@@ -203,11 +216,25 @@ async def search_web(query: str) -> str:
             return "No relevant results found for that query."
 
         logger.info("chat_search_web_done", query=query, hits=len(hits))
+        clean_urls: list[str] = []
         lines = ["**Live web search results:**"]
         for r in hits[:5]:
-            lines.append(f"- **{r.get('title', 'Untitled')}**: {r.get('content', '')[:350]}")
-            if r.get("url"):
-                lines.append(f"  Source: {r['url']}")
+            # Sanitise content — strip any embedded "Source:" lines to avoid
+            # the backend regex capturing false URLs from the snippet text.
+            content = r.get("content", "")[:350]
+            content = "\n".join(
+                ln for ln in content.splitlines()
+                if not ln.strip().lower().startswith("source:")
+            )
+            lines.append(f"- **{r.get('title', 'Untitled')}**: {content}")
+            url = (r.get("url") or "").strip().rstrip(".,;:)>]\"'")
+            if url:
+                clean_urls.append(url)
+                lines.append(f"  Source: {url}")
+
+        # Append a machine-readable block so the backend can extract exact URLs
+        # without relying on regex over potentially noisy content.
+        lines.append(f"\n__SOURCES_JSON__:{json.dumps(clean_urls)}")
         return "\n".join(lines)
 
     except Exception as exc:

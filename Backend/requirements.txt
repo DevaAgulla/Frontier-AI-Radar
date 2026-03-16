@@ -56,8 +56,8 @@ arxiv>=2.1.0
 # Vector store — pgvector replaces ChromaDB (kept for local fallback only)
 sentence-transformers>=2.3.0
 
-# Voice agent
-elevenlabs>=1.0.0
+# Voice agent — REST API used directly via httpx (no SDK needed)
+# elevenlabs>=1.0.0  # removed: SDK has Windows Long Path issue; httpx REST calls used instead
 
 # Web framework
 fastapi>=0.109.0

@@ -12,6 +12,10 @@ import asyncio
 import sys
 from pathlib import Path
 
+# psycopg v3 requires SelectorEventLoop on Windows (incompatible with ProactorEventLoop)
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 

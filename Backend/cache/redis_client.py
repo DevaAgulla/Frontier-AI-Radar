@@ -10,6 +10,8 @@ Key namespaces:
   chat:session:{session_id}:messages   → JSON list, last 50 msgs    TTL 48h
   chat:user:{user_id}:run:{run_id}     → session_id string           TTL 7d
   digest:context:{run_id}              → pre-built markdown context  TTL 7d
+  digest:run:{run_id}                  → full digest payload         TTL 25h
+  digest:latest                        → latest digest payload       TTL 25h
   cache:exact:{run_id}:{q_hash}        → full answer JSON            TTL 7d
 """
 
@@ -160,3 +162,25 @@ def get_cached_answer(run_id: int, question_hash: str) -> Optional[dict]:
 
 def set_cached_answer(run_id: int, question_hash: str, answer_payload: dict) -> None:
     rset(f"cache:exact:{run_id}:{question_hash}", answer_payload, TTL_ANSWER)
+
+
+# ── Digest result cache (written by Celery worker, read by API pods) ──────────
+# TTL_DIGEST = 25 h so it survives until the next scheduled run.
+
+TTL_DIGEST = 25 * 3600
+
+
+def get_digest_cache(run_id: int) -> Optional[dict]:
+    """Return the cached digest payload for a specific run, or None on miss."""
+    return rget(f"digest:run:{run_id}")
+
+
+def get_latest_digest_cache() -> Optional[dict]:
+    """Return the latest completed digest payload, or None on miss."""
+    return rget("digest:latest")
+
+
+def invalidate_digest_cache(run_id: int) -> None:
+    """Remove stale cache entries (call before re-running a digest)."""
+    rdelete(f"digest:run:{run_id}")
+    rdelete("digest:latest")
