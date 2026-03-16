@@ -62,6 +62,8 @@ async def lifespan(app: FastAPI):
     init_db()
     from db.chat import ensure_chat_schema
     ensure_chat_schema()
+    from db.persist import seed_default_competitors
+    seed_default_competitors()
 
     # Start APScheduler only when Celery beat is not running this deployment
     celery_beat_running = False
