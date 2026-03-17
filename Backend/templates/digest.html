@@ -1015,14 +1015,22 @@ hr {
                 {% set score = f.get("impact_score", 0.0)|float %}
                 <div class="score-bar-wrap">
                     <span class="score-text">Score: {{ "%.2f"|format(score) }}</span>
-                    <span style="font-size:7pt; color:#8a92a0;">
-                        (R={{ "%.2f"|format(f.get("relevance", 0.0)|float) }}
-                         N={{ "%.2f"|format(f.get("novelty", 0.0)|float) }}
-                         C={{ "%.2f"|format(f.get("credibility", 0.0)|float) }}
-                         A={{ "%.2f"|format(f.get("actionability", 0.0)|float) }})
-                    </span>
                     <div class="score-bar">
                         <div class="score-fill" style="width:{{ (score * 100)|int }}%; background:{{ sec.text_color }};"></div>
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:5px;">
+                        <span style="font-size:6.5pt; color:#64748b; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:4px; padding:2px 6px;">
+                            Relevance&nbsp;<strong style="color:#334155;">{{ "%.2f"|format(f.get("relevance", 0.0)|float) }}</strong>
+                        </span>
+                        <span style="font-size:6.5pt; color:#64748b; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:4px; padding:2px 6px;">
+                            Novelty&nbsp;<strong style="color:#334155;">{{ "%.2f"|format(f.get("novelty", 0.0)|float) }}</strong>
+                        </span>
+                        <span style="font-size:6.5pt; color:#64748b; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:4px; padding:2px 6px;">
+                            Credibility&nbsp;<strong style="color:#334155;">{{ "%.2f"|format(f.get("credibility", 0.0)|float) }}</strong>
+                        </span>
+                        <span style="font-size:6.5pt; color:#64748b; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:4px; padding:2px 6px;">
+                            Actionability&nbsp;<strong style="color:#334155;">{{ "%.2f"|format(f.get("actionability", 0.0)|float) }}</strong>
+                        </span>
                     </div>
                 </div>
 
