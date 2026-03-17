@@ -4,7 +4,7 @@ import { fetchBackend } from "@/lib/backend";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { run_id, message, history = [], mode = "text", session_id, user_id } = body;
+    const { run_id, message, history = [], mode = "text", session_id, user_id, persona_id } = body;
 
     if (!run_id || !message?.trim()) {
       return NextResponse.json(
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
 
     const res = await fetchBackend("/chat/ask", {
       method: "POST",
-      body: JSON.stringify({ run_id, message, history, mode, session_id, user_id }),
+      body: JSON.stringify({ run_id, message, history, mode, session_id, user_id, persona_id }),
     });
 
     if (!res.ok) {

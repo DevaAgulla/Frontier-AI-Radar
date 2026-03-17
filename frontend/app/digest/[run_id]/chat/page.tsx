@@ -114,19 +114,19 @@ export default function DigestChatPage() {
   const { run_id } = useParams<{ run_id: string }>();
   const { user }   = useAuth();
 
-  const [messages,        setMessages]        = useState<Message[]>([]);
-  const [input,           setInput]           = useState("");
-  const [sending,         setSending]         = useState(false);
-  const [voiceMode,       setVoiceMode]       = useState(false);
-  const [listening,       setListening]       = useState(false);
-  const [speaking,        setSpeaking]        = useState(false);
-  const [sessionId,       setSessionId]       = useState<string | null>(null);
-  const [sessionLoading,  setSessionLoading]  = useState(true);
-  const [digestInfo,      setDigestInfo]      = useState<{ date: string; findings_count: number } | null>(null);
-  const [quickPrompts,    setQuickPrompts]    = useState<string[]>(DEFAULT_QUICK_PROMPTS);
-  const [statusText,      setStatusText]      = useState<string | null>(null);
-  const [activePersona,   setActivePersona]   = useState<string | null>(null);
-  const [sidebarOpen,     setSidebarOpen]     = useState(true);
+  const [messages,           setMessages]           = useState<Message[]>([]);
+  const [input,              setInput]              = useState("");
+  const [sending,            setSending]            = useState(false);
+  const [voiceMode,          setVoiceMode]          = useState(false);
+  const [listening,          setListening]          = useState(false);
+  const [speaking,           setSpeaking]           = useState(false);
+  const [sessionId,          setSessionId]          = useState<string | null>(null);
+  const [sessionLoading,     setSessionLoading]     = useState(true);
+  const [digestInfo,         setDigestInfo]         = useState<{ date: string; findings_count: number } | null>(null);
+  const [statusText,         setStatusText]         = useState<string | null>(null);
+  const [activePersona,      setActivePersona]      = useState<string | null>(null);
+  const [sidebarOpen,        setSidebarOpen]        = useState(true);
+  const [personaSwitchTarget, setPersonaSwitchTarget] = useState<string | null>(null);
 
   const messagesEndRef  = useRef<HTMLDivElement>(null);
   const inputRef        = useRef<HTMLInputElement>(null);
@@ -143,11 +143,24 @@ export default function DigestChatPage() {
     if (savedSidebar !== null) setSidebarOpen(savedSidebar !== "false");
   }, []);
 
+  const _applyPersonaSwitch = useCallback((id: string | null) => {
+    setActivePersona(id);
+    globalThis.localStorage?.setItem("frontier_active_persona", id ?? "");
+    // Clear messages — empty state will show persona heading + chips
+    // Session effect will re-run (activePersona dep) and load any prior history
+    setMessages([]);
+    setSessionId(null);
+  }, []);
+
   const selectPersona = useCallback((id: string) => {
     const next = activePersona === id ? null : id;
-    setActivePersona(next);
-    globalThis.localStorage?.setItem("frontier_active_persona", next ?? "");
-  }, [activePersona]);
+    const hasActiveConversation = messagesRef.current.some(m => m.role === "user" && !m.fromHistory);
+    if (hasActiveConversation && next !== activePersona) {
+      setPersonaSwitchTarget(next);
+    } else {
+      _applyPersonaSwitch(next);
+    }
+  }, [activePersona, _applyPersonaSwitch]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen(prev => {
@@ -175,10 +188,14 @@ export default function DigestChatPage() {
     }
   }, []);
 
-  // ── Load session + history on mount ────────────────────────────────────
+  // ── Load session + history (re-runs on persona switch) ──────────────────
   useEffect(() => {
-    const token  = globalThis.localStorage?.getItem("frontier_ai_radar_token");
-    const userId = user?.id ? String(user.id) : null;
+    const token     = globalThis.localStorage?.getItem("frontier_ai_radar_token");
+    const userId    = user?.id ? String(user.id) : null;
+    // Read persona directly from localStorage to avoid stale state on mount
+    const personaId = globalThis.localStorage?.getItem("frontier_active_persona") || "";
+
+    setSessionLoading(true);
 
     // Load digest metadata in parallel
     fetch("/api/digests", {
@@ -191,10 +208,10 @@ export default function DigestChatPage() {
       })
       .catch(() => {});
 
-    // Load session — backend resolves the right session by (user_id, run_id)
-    // and returns the most recent 10 messages directly from the DB.
+    // Load session scoped by (user_id, run_id, persona_id)
     const params = new URLSearchParams({ run_id: String(run_id) });
-    if (userId) params.set("user_id", userId);
+    if (userId)    params.set("user_id", userId);
+    if (personaId) params.set("persona_id", personaId);
 
     fetch(`/api/chat/session?${params.toString()}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -211,33 +228,19 @@ export default function DigestChatPage() {
           fromHistory: true,
         }));
 
-        if (data.popular_questions?.length) {
-          setQuickPrompts([
-            ...data.popular_questions.slice(0, 3),
-            ...DEFAULT_QUICK_PROMPTS.slice(0, 2),
-          ]);
-        }
-
-        if (prior.length > 0) {
-          setMessages(prior);
-        } else {
-          setMessages([{
-            role:      "assistant",
-            content:   `Hello! I'm your AI intelligence analyst. Ask me anything about this digest.`,
-            timestamp: new Date(),
-          }]);
-        }
+        // Merge: keep any live messages the user already sent before session loaded.
+        // This prevents the race where fast cache response wipes a just-sent message.
+        setMessages(prev => {
+          const live = prev.filter(m => !m.fromHistory);
+          return [...prior, ...live];
+        });
       })
       .catch(() => {
-        setMessages([{
-          role:      "assistant",
-          content:   "Hello! I'm your AI intelligence analyst. Ask me anything about this digest.",
-          timestamp: new Date(),
-        }]);
+        setMessages(prev => prev.filter(m => !m.fromHistory));
       })
       .finally(() => setSessionLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run_id]);
+  }, [run_id, activePersona]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -271,12 +274,12 @@ export default function DigestChatPage() {
         },
         body: JSON.stringify({
           run_id,
-          message:    text.trim(),
+          message:       text.trim(),
           history,
           mode,
-          session_id:  sessionId,
-          user_id:     user?.id ?? null,
-          persona_id:  activePersona ?? null,
+          session_id:    sessionId,
+          user_id:       user?.id ?? null,
+          persona_id:    activePersona ?? null,
         }),
       });
 
@@ -423,6 +426,8 @@ export default function DigestChatPage() {
 
   const userInitial    = user?.name?.[0]?.toUpperCase() ?? "U";
   const hasUserMessage = messages.some(m => m.role === "user" && !m.fromHistory);
+  const hasHistory     = messages.some(m => m.fromHistory);
+  const showEmptyState = !hasUserMessage && !hasHistory;
 
   const selectedPersona = PERSONAS.find(p => p.id === activePersona) ?? null;
 
@@ -455,31 +460,6 @@ export default function DigestChatPage() {
             </button>
           ))}
 
-          {/* Prompt templates for selected persona */}
-          {selectedPersona && (
-            <div className="mt-3">
-              <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest px-1 mb-1.5">Suggested prompts</p>
-              <div className="space-y-1">
-                {selectedPersona.prompts.map((prompt, pi) => (
-                  <button
-                    key={pi}
-                    onClick={() => fillPrompt(prompt)}
-                    className="w-full text-left px-2.5 py-2 rounded-lg text-[11px] text-[var(--text-secondary)] bg-[var(--bg)] border border-[var(--border)] hover:border-[var(--primary)] hover:text-[var(--primary)] hover:bg-[var(--primary-light)] transition-all leading-snug"
-                  >
-                    {prompt.includes("[") ? (
-                      <>
-                        {prompt.split(/(\[[^\]]+\])/g).map((part, idx) =>
-                          /^\[[^\]]+\]$/.test(part)
-                            ? <span key={idx} className="bg-yellow-100 text-yellow-800 rounded px-0.5">{part}</span>
-                            : part
-                        )}
-                      </>
-                    ) : prompt}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -579,6 +559,58 @@ export default function DigestChatPage() {
 
       {/* ── Messages ───────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6">
+
+        {/* ── Empty state (no history, no sent messages yet) ── */}
+        {showEmptyState ? (
+          <div className="h-full flex flex-col items-center justify-center gap-3 pb-12">
+            {selectedPersona ? (
+              <>
+                <span className="text-5xl">{selectedPersona.icon}</span>
+                <h2 className="text-xl font-semibold text-[var(--text-primary)]">{selectedPersona.label}</h2>
+                <p className="text-xs text-[var(--text-muted)] text-center max-w-xs leading-relaxed">{selectedPersona.description}</p>
+                <div className="grid grid-cols-2 gap-2 w-full max-w-lg mt-4">
+                  {selectedPersona.prompts.slice(0, 6).map((prompt, pi) => (
+                    <button
+                      key={pi}
+                      onClick={() => fillPrompt(prompt)}
+                      className="text-left px-3 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] text-xs text-[var(--text-secondary)] hover:border-[var(--primary)] hover:text-[var(--primary)] hover:bg-[var(--primary-light)] transition-all leading-snug"
+                    >
+                      {prompt.includes("[") ? (
+                        <>
+                          {prompt.split(/(\[[^\]]+\])/g).map((part, idx) =>
+                            /^\[[^\]]+\]$/.test(part)
+                              ? <span key={idx} className="bg-yellow-100 text-yellow-800 rounded px-0.5">{part}</span>
+                              : part
+                          )}
+                        </>
+                      ) : prompt}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="text-5xl">🔭</span>
+                <h2 className="text-xl font-semibold text-[var(--text-primary)]">AI Intelligence Analyst</h2>
+                <p className="text-xs text-[var(--text-muted)] text-center max-w-xs leading-relaxed">
+                  Your real-time AI industry radar. Ask anything about today's digest.
+                </p>
+                <div className="grid grid-cols-2 gap-2 w-full max-w-lg mt-4">
+                  {DEFAULT_QUICK_PROMPTS.map(p => (
+                    <button
+                      key={p}
+                      onClick={() => sendMessage(p)}
+                      className="text-left px-3 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] text-xs text-[var(--text-secondary)] hover:border-[var(--primary)] hover:text-[var(--primary)] hover:bg-[var(--primary-light)] transition-all leading-snug"
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+
         <div className="max-w-3xl mx-auto space-y-5">
 
           {messages.map((msg, i) => {
@@ -705,26 +737,9 @@ export default function DigestChatPage() {
 
           <div ref={messagesEndRef} />
         </div>
-      </div>
 
-      {/* ── Quick prompts ───────────────────────────────────────────────── */}
-      {!hasUserMessage && !sending && !sessionLoading && (
-        <div className="flex-none px-4 sm:px-6 pb-3">
-          <div className="max-w-3xl mx-auto">
-            <p className="text-[10px] text-[var(--text-muted)] text-center mb-2 uppercase tracking-wide">
-              {quickPrompts[0] !== DEFAULT_QUICK_PROMPTS[0] ? "Trending questions on this brief" : "Try asking"}
-            </p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {quickPrompts.slice(0, 5).map(p => (
-                <button key={p} onClick={() => sendMessage(p)}
-                  className="px-3 py-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-card)] text-xs text-[var(--text-secondary)] hover:border-[var(--primary)] hover:text-[var(--primary)] hover:bg-[var(--primary-light)] transition-all text-left">
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+        )} {/* end showEmptyState conditional */}
+      </div>
 
       {/* ── Input area ─────────────────────────────────────────────────── */}
       <div className="flex-none border-t border-[var(--border)] bg-[var(--bg-card)] px-4 sm:px-6 py-3">
@@ -736,18 +751,17 @@ export default function DigestChatPage() {
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(input); } }}
             placeholder={
-              sessionLoading ? "Loading session…" :
-              listening      ? "Listening…" :
-              voiceMode      ? "Ask a question — response will be spoken aloud…" :
+              listening ? "Listening…" :
+              voiceMode ? "Ask a question — response will be spoken aloud…" :
               "Ask about today's AI intelligence…"
             }
-            disabled={sending || listening || sessionLoading}
+            disabled={sending || listening}
             className="flex-1 px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg)] text-[var(--text-primary)] text-sm placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/25 focus:border-[var(--primary)] transition-colors disabled:opacity-60"
           />
 
           {/* Mic */}
           <button type="button" onClick={listening ? undefined : handleVoiceInput}
-            disabled={sending || sessionLoading}
+            disabled={sending}
             className={`w-10 h-10 rounded-xl flex-none flex items-center justify-center transition-all ${
               listening ? "bg-red-500 text-white animate-pulse" : "border border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--primary)] hover:text-[var(--primary)]"
             } disabled:opacity-40`}>
@@ -759,7 +773,7 @@ export default function DigestChatPage() {
 
           {/* Send */}
           <button type="button" onClick={() => sendMessage(input)}
-            disabled={!input.trim() || sending || sessionLoading}
+            disabled={!input.trim() || sending}
             className="w-10 h-10 rounded-xl flex-none flex items-center justify-center bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
@@ -770,11 +784,42 @@ export default function DigestChatPage() {
         <p className="text-center text-[10px] text-[var(--text-muted)] mt-2">
           {voiceMode
             ? "Voice mode · ElevenLabs · session saved · web search on demand"
-            : "Text mode · streaming · session saved · 3-tier answer cache"}
+            : "Text mode · streaming · session saved · web search on demand"}
         </p>
       </div>
 
       </div>{/* end main chat column */}
+
+      {/* ── Persona switch confirmation modal ──────────────────────────── */}
+      {personaSwitchTarget !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-2">Switch persona?</h3>
+            <p className="text-xs text-[var(--text-secondary)] mb-5 leading-relaxed">
+              Switching persona will reset this conversation context and start fresh with the new persona's focus.
+              Your conversation history is still saved.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setPersonaSwitchTarget(null)}
+                className="px-4 py-2 text-xs rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  _applyPersonaSwitch(personaSwitchTarget);
+                  setPersonaSwitchTarget(null);
+                }}
+                className="px-4 py-2 text-xs rounded-lg bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)] transition-colors font-medium"
+              >
+                Switch & reset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

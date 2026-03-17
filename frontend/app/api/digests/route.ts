@@ -32,6 +32,7 @@ export async function GET(request: Request) {
           id: String(run.run_id),
           run_id: String(run.run_id),
           date,
+          period: (run.period as string) || "daily",
           executive_summary: run.executive_summary || `Frontier AI Intelligence Brief — ${findingsCount} findings across research, competitor, model & benchmark agents.`,
           findings_count: findingsCount,
           pdf_url: hasPdf ? `/api/digests/${run.run_id}/pdf` : null,

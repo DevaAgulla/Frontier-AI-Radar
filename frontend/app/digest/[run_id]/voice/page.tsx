@@ -14,7 +14,7 @@ interface Transcript {
   role:       TranscriptRole;
   text:       string;
   streaming?: boolean;
-  audioUrl?:  string;      // blob URL (in-memory) or data URL (from IDB) for replay
+  audioUrl?:  string;
   timestamp?: Date;
   toolName?:  string;
   toolPhase?: "start" | "end";
@@ -22,16 +22,8 @@ interface Transcript {
 
 // ── IndexedDB Audio Store ─────────────────────────────────────────────────────
 //
-// Persists MP3 audio for every completed assistant turn so users can replay
-// responses after a page refresh. Stored as raw ArrayBuffer (no base64 penalty).
-//
-// Key schema:  `${sessionId}-${assistantTurnIndex}`
-//   - assistantTurnIndex is 0-based across the entire session lifetime
-//   - Interrupted turns (saved as "[paused]") increment the counter but have
-//     no audio entry — IDB load returns null gracefully
-//
-// Eviction: oldest entries removed once total count exceeds MAX_ENTRIES (200).
-// At ~50 KB/response average, 200 entries ≈ 10 MB — well within browser limits.
+// Kept for audio replay. LiveKit handles real-time playback natively via WebRTC
+// audio tracks — IDB is only used to store completed turns for the replay button.
 
 class VoiceAudioStore {
   private static readonly DB_NAME     = "frontier-voice-audio";
@@ -49,7 +41,7 @@ class VoiceAudioStore {
       req.onupgradeneeded = (e) => {
         const db    = (e.target as IDBOpenDBRequest).result;
         const store = db.createObjectStore(VoiceAudioStore.STORE, { keyPath: "key" });
-        store.createIndex("createdAt", "createdAt"); // for LRU eviction
+        store.createIndex("createdAt", "createdAt");
       };
       req.onsuccess = (e) => resolve((e.target as IDBOpenDBRequest).result);
       req.onerror   = () => { this.dbP = null; reject(req.error); };
@@ -57,7 +49,6 @@ class VoiceAudioStore {
     return this.dbP;
   }
 
-  /** Save MP3 chunks under `key`; returns an object URL for immediate playback. */
   async save(key: string, chunks: ArrayBuffer[]): Promise<string | null> {
     try {
       const db   = await this._open();
@@ -69,12 +60,11 @@ class VoiceAudioStore {
         tx.oncomplete = () => ok();
         tx.onerror    = () => fail(tx.error);
       });
-      this._evict(); // fire-and-forget LRU cleanup
+      this._evict();
       return URL.createObjectURL(blob);
     } catch { return null; }
   }
 
-  /** Load a stored clip; returns an object URL or null if not cached. */
   async load(key: string): Promise<string | null> {
     try {
       const db  = await this._open();
@@ -100,112 +90,22 @@ class VoiceAudioStore {
         req.onerror   = () => fail(req.error);
       });
       if (count <= VoiceAudioStore.MAX_ENTRIES) return;
-      // Collect the oldest `count - MAX_ENTRIES` keys
-      const toDelete = count - VoiceAudioStore.MAX_ENTRIES;
-      const keys: IDBValidKey[] = await new Promise((ok, fail) => {
+      const excess = count - VoiceAudioStore.MAX_ENTRIES;
+      const rows: any[] = await new Promise((ok, fail) => {
         const tx  = db.transaction(VoiceAudioStore.STORE, "readonly");
-        const req = tx.objectStore(VoiceAudioStore.STORE).index("createdAt").getAllKeys();
-        req.onsuccess = () => ok((req.result as IDBValidKey[]).slice(0, toDelete));
+        const req = tx.objectStore(VoiceAudioStore.STORE).index("createdAt").getAll();
+        req.onsuccess = () => ok(req.result);
         req.onerror   = () => fail(req.error);
       });
+      rows.sort((a, b) => a.createdAt - b.createdAt);
+      const toDelete = rows.slice(0, excess).map((r) => r.key);
       await new Promise<void>((ok, fail) => {
         const tx = db.transaction(VoiceAudioStore.STORE, "readwrite");
-        keys.forEach(k => tx.objectStore(VoiceAudioStore.STORE).delete(k));
+        toDelete.forEach((k) => tx.objectStore(VoiceAudioStore.STORE).delete(k));
         tx.oncomplete = () => ok();
         tx.onerror    = () => fail(tx.error);
       });
     } catch {}
-  }
-}
-
-// ── Streaming Audio Player (MediaSource Extensions) ───────────────────────────
-//
-// Change from previous version: `onBlobReady` replaced by `onTurnComplete(chunks)`
-// so the component can persist chunks to IndexedDB before creating the blob URL.
-
-class StreamingAudioPlayer {
-  private ms!:      MediaSource;
-  private sb:       SourceBuffer | null = null;
-  private audio!:   HTMLAudioElement;
-  private blobUrl!: string;
-  private pending:  ArrayBuffer[] = [];
-  private chunks:   ArrayBuffer[] = [];
-  private ready     = false;
-  private turnDone  = false;
-
-  onPlaybackEnd?:   () => void;
-  onTurnComplete?:  (chunks: ArrayBuffer[]) => void; // replaces onBlobReady
-
-  constructor() { this._init(); }
-
-  private _init() {
-    this.ms      = new MediaSource();
-    this.audio   = new Audio();
-    this.blobUrl = URL.createObjectURL(this.ms);
-    this.audio.src = this.blobUrl;
-    this.audio.preload = "auto";
-    this.audio.addEventListener("ended", () => this.onPlaybackEnd?.());
-    this.ms.addEventListener("sourceopen", () => {
-      try {
-        this.sb = this.ms.addSourceBuffer("audio/mpeg");
-        this.sb.mode = "sequence";
-        this.sb.addEventListener("updateend", () => this._flush());
-        this.ready = true;
-        this._flush();
-      } catch (e) { console.warn("[Audio] MSE init:", e); }
-    });
-  }
-
-  resume() { this.audio.play().catch(() => {}); }
-
-  push(chunk: ArrayBuffer) {
-    if (this.turnDone) return;
-    const copy = chunk.slice(0);
-    this.chunks.push(copy);
-    this.pending.push(copy);
-    this._flush();
-    if (this.audio.paused && this.audio.readyState >= 3) {
-      this.audio.play().catch(() => {});
-    }
-  }
-
-  private _flush() {
-    if (!this.ready || !this.sb || this.sb.updating || this.pending.length === 0) return;
-    const totalLen = this.pending.reduce((n, b) => n + b.byteLength, 0);
-    const merged   = new Uint8Array(totalLen);
-    let off = 0;
-    for (const c of this.pending) { merged.set(new Uint8Array(c), off); off += c.byteLength; }
-    this.pending = [];
-    try {
-      this.sb.appendBuffer(merged.buffer);
-    } catch (e: any) {
-      if (e?.name === "QuotaExceededError") {
-        const t = this.audio.currentTime;
-        if (t > 1) try { this.sb.remove(0, t - 0.5); } catch {}
-        this.pending.unshift(merged.buffer);
-      } else { console.warn("[Audio] appendBuffer:", e); }
-    }
-  }
-
-  endTurn() {
-    this.turnDone = true;
-    if (this.chunks.length > 0) {
-      this.onTurnComplete?.(this.chunks.slice()); // pass copy; component saves to IDB
-    }
-    const tryEnd = () => {
-      if (this.ms.readyState === "open") try { this.ms.endOfStream(); } catch {}
-    };
-    if (this.sb?.updating) {
-      this.sb.addEventListener("updateend", tryEnd, { once: true });
-    } else { tryEnd(); }
-  }
-
-  stop() {
-    this.audio.pause();
-    try { URL.revokeObjectURL(this.blobUrl); } catch {}
-    this.sb = null; this.ready = false; this.turnDone = false;
-    this.pending = []; this.chunks = [];
-    this._init();
   }
 }
 
@@ -245,20 +145,12 @@ function ReplayButton({ audioUrl }: { audioUrl: string }) {
 
 // ── Stop-command classifier ───────────────────────────────────────────────────
 
-// Patterns that indicate the user wants to stop the voice interaction.
-// Checked during barge-in (while AI speaks) and hands-free listening (after AI finishes).
 const STOP_PATTERNS = [
   /^(stop|pause|cancel|enough|quiet|silence)$/,
-  /\bshut up\b/,
-  /\bstop (talking|speaking|now|it|please)\b/,
-  /\byou can stop\b/,
-  /\bplease (stop|pause|be quiet)\b/,
-  /\bok(ay)? (stop|pause)\b/,
-  /\bthat'?s (all|enough|fine|ok|okay|good|great)\b/,
-  /\bno (more|thanks?|thank you)\b/,
-  /\bi('m| am) (good|done|all set|fine|ok|okay)\b/,
-  /\b(thanks?|thank you)[\s,]*.*\b(stop|that'?s all|enough)\b/,
-  /\bstop[\s,]+thanks?\b/,
+  /\bshut up\b/, /\bstop (talking|speaking|now|it|please)\b/,
+  /\byou can stop\b/, /\bplease (stop|pause|be quiet)\b/,
+  /\bok(ay)? (stop|pause)\b/, /\bthat'?s (all|enough|fine|ok|okay|good|great)\b/,
+  /\bno (more|thanks?|thank you)\b/, /\bi('m| am) (good|done|all set|fine|ok|okay)\b/,
 ];
 
 function isStopCommand(text: string): boolean {
@@ -275,68 +167,51 @@ export default function VoicePage() {
   const [voiceState,  setVoiceState]  = useState<VoiceState>("connecting");
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [statusLabel, setStatusLabel] = useState("Connecting…");
-  const [wsReady,     setWsReady]     = useState(false);
+  const [connected,   setConnected]   = useState(false);
   const [errorMsg,    setErrorMsg]    = useState("");
   const [interimText, setInterimText] = useState("");
 
-  // ── Stable refs (safe in stale closures) ────────────────────────────────────
-  const wsRef               = useRef<WebSocket | null>(null);
-  const audioPlayerRef      = useRef<StreamingAudioPlayer | null>(null);
+  // ── Refs ──────────────────────────────────────────────────────────────────────
+  const roomRef             = useRef<any>(null);                  // livekit Room
   const bottomRef           = useRef<HTMLDivElement>(null);
   const streamingIdxRef     = useRef(-1);
-  const recognitionRef      = useRef<any>(null);
-  const bargeInRecRef       = useRef<any>(null);
-  const bargeInActiveRef    = useRef(false);
-  const aiSpeakingRef       = useRef(false);
-  const interruptSentRef    = useRef(false);
-  const sessionIdRef        = useRef("");          // stable session ID from WS/API
-  const assistantTurnRef    = useRef(0);           // next assistant audio key index
-  const userTurnRef         = useRef(0);           // next user audio key index
-  const mediaRecorderRef    = useRef<MediaRecorder | null>(null); // active mic recorder
+  const sessionIdRef        = useRef("");
+  const assistantTurnRef    = useRef(0);
+  const userTurnRef         = useRef(0);
   const audioStoreRef       = useRef<VoiceAudioStore | null>(null);
-  const wsReadyRef          = useRef(false);       // mirror wsReady for callbacks
-  const pendingActionRef    = useRef<"greeting" | "listen" | null>(null);
-  const startListeningRef   = useRef<() => void>(() => {});
-  const bufferedTextRef     = useRef("");          // text_chunks queued before audio_start fires
-  const audioStartedRef     = useRef(false);       // true once audio_start fires for current turn
+  const connectedRef        = useRef(false);                      // mirror for callbacks
+  const aiSpeakingRef       = useRef(false);
 
-  // ── Init audio store once ────────────────────────────────────────────────────
+  // ── Init audio store ──────────────────────────────────────────────────────────
   useEffect(() => { audioStoreRef.current = new VoiceAudioStore(); }, []);
 
-  // ── Scroll to bottom ─────────────────────────────────────────────────────────
+  // ── Scroll to bottom ──────────────────────────────────────────────────────────
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); },
     [transcripts, interimText]);
 
-  // ── Cleanup ───────────────────────────────────────────────────────────────────
+  // ── Cleanup on unmount ────────────────────────────────────────────────────────
   useEffect(() => () => { _disconnect(); }, []);
 
-  // ── Fetch voice history from API ─────────────────────────────────────────────
+  // ── Load voice history from API ───────────────────────────────────────────────
   const fetchHistory = useCallback(async () => {
     try {
-      const base   = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
-      const qs     = user?.id ? `?user_id=${user.id}` : "";
-      const res    = await fetch(`${base}/api/v1/voice/${run_id}/history${qs}`);
+      const base = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+      const qs   = user?.id ? `?user_id=${user.id}` : "";
+      const res  = await fetch(`${base}/api/v1/voice/${run_id}/history${qs}`);
       if (!res.ok) return;
-      const data   = await res.json();
+      const data = await res.json();
 
       sessionIdRef.current = data.session_id;
 
-      // Build transcript from history (text only — audio loaded lazily below)
       const msgs: Transcript[] = (data.messages as any[]).map(m => ({
         role:      m.role as TranscriptRole,
         text:      String(m.content ?? "").replace(/ \[paused\]$/, ""),
         timestamp: m.created_at ? new Date(m.created_at) : undefined,
       }));
 
-      // IMPORTANT: only replace transcripts when there is real history to show.
-      // If msgs is empty (brand-new session), the WS greeting pipeline may have
-      // already appended a streaming bubble — calling setTranscripts([]) here
-      // would erase it and break capturedTranscriptIdx / audioUrl patching.
-      if (msgs.length > 0) {
-        setTranscripts(msgs);
-      }
+      if (msgs.length > 0) setTranscripts(msgs);
 
-      // Count turns for audio key sequencing (assistant keys and user keys)
+      // Count turns for audio key sequencing
       let aIdx = 0, uIdx = 0;
       const audioJobs: { transcriptIdx: number; key: string }[] = [];
       msgs.forEach((m, ti) => {
@@ -348,10 +223,9 @@ export default function VoicePage() {
           uIdx++;
         }
       });
-      assistantTurnRef.current = aIdx; // next new assistant turn starts here
-      userTurnRef.current      = uIdx; // next new user turn starts here
+      assistantTurnRef.current = aIdx;
+      userTurnRef.current      = uIdx;
 
-      // Load cached audio in background — update bubbles as each resolves
       audioJobs.forEach(({ transcriptIdx, key }) => {
         audioStoreRef.current?.load(key).then(url => {
           if (!url) return;
@@ -362,283 +236,267 @@ export default function VoicePage() {
           });
         });
       });
-
-      // Decide what to do once WS is ready
-      pendingActionRef.current = data.is_new ? "greeting" : "listen";
-      if (wsReadyRef.current) {
-        if (data.is_new) wsRef.current?.send(JSON.stringify({ type: "greeting" }));
-        else             startListeningRef.current();
-      }
     } catch (e) {
-      console.error("[VoiceAgent] fetchHistory error:", e);
+      console.error("[LiveKitVoice] fetchHistory error:", e);
     }
   }, [run_id, user?.id]);
 
-  // ── Auto-connect + history on mount ──────────────────────────────────────────
-  useEffect(() => {
-    _connect();
-    fetchHistory();
-  }, [run_id]);
-
-  // ── Barge-in cycle (runs while AI is speaking) ─────────────────────────────
-  const _startBargeIn = useCallback(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR || bargeInActiveRef.current) return;
-    bargeInActiveRef.current = true;
-
-    function _shot() {
-      if (!bargeInActiveRef.current) return;
-      const rec = new SR();
-      rec.continuous = false; rec.interimResults = true; rec.lang = "en-US";
-      bargeInRecRef.current = rec;
-
-      rec.onresult = (event: any) => {
-        let interim = "", final = "";
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const t = event.results[i][0].transcript;
-          if (event.results[i].isFinal) final += t; else interim += t;
-        }
-        if (interim) setInterimText(interim);
-        if (final.trim()) {
-          setInterimText("");
-          const text = final.trim();
-          if (aiSpeakingRef.current && !interruptSentRef.current) {
-            interruptSentRef.current = true;
-            audioPlayerRef.current?.stop();
-            wsRef.current?.send(JSON.stringify({ type: "interrupt" }));
-            if (isStopCommand(text)) {
-              // User wants to stop — kill barge-in cycle so it doesn't restart
-              bargeInActiveRef.current = false;
-              setVoiceState("idle"); setStatusLabel("Tap to speak");
-            } else {
-              setTranscripts(prev => [
-                ...prev.filter(t => t.role !== "tool_status"),
-                { role: "user", text, timestamp: new Date() },
-              ]);
-              wsRef.current?.send(JSON.stringify({ type: "user_text", text, barge_in: true }));
-              setVoiceState("thinking"); setStatusLabel("Thinking…");
-            }
-          } else if (!aiSpeakingRef.current) {
-            // Hands-free post-AI listening — check for stop before querying LLM
-            if (isStopCommand(text)) {
-              setInterimText("");
-              bargeInActiveRef.current = false;
-              setVoiceState("idle"); setStatusLabel("Tap to speak");
-            } else {
-              setTranscripts(prev => [...prev, { role: "user", text, timestamp: new Date() }]);
-              wsRef.current?.send(JSON.stringify({ type: "user_text", text }));
-              setVoiceState("thinking"); setStatusLabel("Thinking…");
-            }
-          }
-        }
-      };
-      rec.onerror = (e: any) => {
-        bargeInRecRef.current = null;
-        if (e.error === "not-allowed") { bargeInActiveRef.current = false; return; }
-        if (bargeInActiveRef.current) setTimeout(_shot, 300);
-      };
-      rec.onend = () => {
-        bargeInRecRef.current = null;
-        if (bargeInActiveRef.current) setTimeout(_shot, 150);
-      };
-      try { rec.start(); } catch { bargeInActiveRef.current = false; }
-    }
-    _shot();
-  }, []);
-
-  const _stopBargeIn = useCallback(() => {
-    bargeInActiveRef.current = false;
-    if (bargeInRecRef.current) { try { bargeInRecRef.current.abort(); } catch {} bargeInRecRef.current = null; }
-  }, []);
-
-  // ── WebSocket connect ─────────────────────────────────────────────────────────
+  // ── LiveKit connect ───────────────────────────────────────────────────────────
   const _connect = useCallback(async () => {
     setVoiceState("connecting");
     setStatusLabel("Connecting…");
     setErrorMsg("");
 
-    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const base     = process.env.NEXT_PUBLIC_API_URL?.replace(/^https?:\/\//, "") || window.location.host;
-    const userId   = user?.id ? `?user_id=${user.id}` : "";
-    const url      = `${protocol}://${base}/api/v1/voice/${run_id}${userId}`;
+    try {
+      // Dynamically import livekit-client to avoid SSR issues
+      const { Room, RoomEvent, Track } = await import("livekit-client");
 
-    console.log("[VoiceAgent] Connecting →", url);
-    const ws = new WebSocket(url);
-    wsRef.current   = ws;
-    ws.binaryType   = "arraybuffer";
+      // Get LiveKit token from our FastAPI endpoint
+      const base       = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+      const voice      = globalThis.localStorage?.getItem("frontier_voice_preset") || "rachel";
+      const personaId  = globalThis.localStorage?.getItem("frontier_active_persona") || "";
+      const qs         = new URLSearchParams({
+        run_id: String(run_id),
+        ...(user?.id ? { user_id: String(user.id) } : {}),
+        voice,
+        ...(personaId ? { persona_id: personaId } : {}),
+      });
 
-    ws.onmessage = (ev) => {
-      if (ev.data instanceof ArrayBuffer) { audioPlayerRef.current?.push(ev.data.slice(0)); return; }
-      try { _handleMsg(JSON.parse(ev.data as string)); } catch {}
-    };
-    ws.onerror = () => {
-      setVoiceState("error");
-      setErrorMsg(`Cannot connect to ${url} — is the backend running?`);
-      setStatusLabel("Connection failed");
-    };
-    ws.onclose = () => { wsReadyRef.current = false; setWsReady(false); };
-  }, [run_id, user?.id]);
-
-  const _disconnect = useCallback(() => {
-    _stopBargeIn();
-    if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch {} recognitionRef.current = null; }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      try { mediaRecorderRef.current.stop(); } catch {} mediaRecorderRef.current = null;
-    }
-    audioPlayerRef.current?.stop();
-    if (wsRef.current) {
-      const ws = wsRef.current;
-      wsRef.current = null;
-      // Avoid "WebSocket closed before connection established" (Chrome error) by
-      // deferring close until after the handshake when still in CONNECTING state.
-      if (ws.readyState === WebSocket.CONNECTING) {
-        ws.onopen  = () => ws.close();
-        ws.onerror = () => {};
-      } else if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
+      const tokenRes = await fetch(`${base}/api/v1/voice/livekit-token?${qs}`);
+      if (!tokenRes.ok) {
+        const err = await tokenRes.json().catch(() => ({}));
+        throw new Error(err.detail || `Token error ${tokenRes.status}`);
       }
-      // CLOSING (2) or CLOSED (3) — nothing to do
-    }
-    wsReadyRef.current = false; setWsReady(false);
-    setVoiceState("idle"); setStatusLabel("Tap to speak"); setInterimText("");
-    aiSpeakingRef.current = false;
-  }, [_stopBargeIn]);
+      const { token, ws_url } = await tokenRes.json();
 
-  // ── Server message handler ────────────────────────────────────────────────────
-  const _handleMsg = useCallback((msg: any) => {
-    switch (msg.type) {
+      // Create and connect the LiveKit room
+      const room = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+        audioCaptureDefaults: {
+          noiseSuppression:  true,
+          echoCancellation:  true,   // prevents mic from picking up AI speaker output
+          autoGainControl:   true,
+        },
+      });
+      roomRef.current = room;
 
-      case "ready": {
-        if (msg.session_id) sessionIdRef.current = msg.session_id;
-        setWsReady(true); wsReadyRef.current = true;
+      // ── Event: remote participant joins (agent connects) ────────────────────
+      room.on(RoomEvent.ParticipantConnected, () => {
+        setStatusLabel("Agent connected — speak now");
         setVoiceState("idle");
-        audioPlayerRef.current = new StreamingAudioPlayer();
+      });
 
-        // Trigger greeting or start listening depending on history fetch result
-        const action = pendingActionRef.current;
-        if (action === "greeting") {
-          wsRef.current?.send(JSON.stringify({ type: "greeting" }));
-        } else if (action === "listen") {
-          setStatusLabel("Listening…");
-          setTimeout(() => startListeningRef.current(), 200);
-        } else {
-          // History not loaded yet — will be handled when fetchHistory completes
-          setStatusLabel("Ready");
+      // ── Event: agent audio track published ──────────────────────────────────
+      // LiveKit publishes ONE continuous audio track per participant for the whole
+      // session — it is never "ended" between utterances, just silent.
+      // We attach it once for playback; speaking state is tracked via
+      // ActiveSpeakersChanged (audio energy level) not via track lifecycle events.
+      const attachedTracks = new Set<string>();
+      room.on(RoomEvent.TrackSubscribed, (track: any, publication: any, participant: any) => {
+        if (track.kind !== Track.Kind.Audio) return;
+        const trackKey = participant.identity + ":" + track.sid;
+        if (attachedTracks.has(trackKey)) return; // already attached — never attach twice
+        attachedTracks.add(trackKey);
+        // Attach to a hidden <audio> element — LiveKit track.attach() returns
+        // an HTMLAudioElement and starts playback automatically after user gesture.
+        const audioEl = track.attach() as HTMLAudioElement;
+        audioEl.style.display = "none";
+        document.body.appendChild(audioEl);
+        // Ensure AudioContext is resumed (required after autoplay policy changes)
+        audioEl.play().catch(() => { /* browser will auto-play on next user gesture */ });
+      });
+
+      // ── Speaking state: use audio energy events, not track lifecycle ──────────
+      // ActiveSpeakersChanged fires in real-time as participants start/stop
+      // generating audio above the silence threshold. This is how all production
+      // voice SDKs (Alexa, Google Assistant, Siri SDK) track speaking state.
+      room.on(RoomEvent.ActiveSpeakersChanged, (speakers: any[]) => {
+        const agentSpeaking = speakers.some(
+          (p: any) => p.identity?.startsWith("agent")
+        );
+        if (agentSpeaking && !aiSpeakingRef.current) {
+          aiSpeakingRef.current = true;
+          setVoiceState("speaking");
+          setStatusLabel("Speaking… (speak to interrupt)");
+        } else if (!agentSpeaking && aiSpeakingRef.current) {
+          aiSpeakingRef.current = false;
+          // Don't override "thinking" — only transition from "speaking" to "listening"
+          setVoiceState(prev => prev === "speaking" ? "listening" : prev);
+          setStatusLabel(prev => prev.startsWith("Speaking") ? "Listening…" : prev);
         }
-        break;
-      }
+      });
 
-      case "thinking": {
-        audioPlayerRef.current?.stop();
-        _stopBargeIn();
-        aiSpeakingRef.current  = false;
-        interruptSentRef.current = false;
+      // ── Event: transcription (user STT or agent TTS text) ───────────────────
+      room.on(RoomEvent.TranscriptionReceived, (segments: any[], participant: any) => {
+        const isAgent = participant?.identity?.startsWith("agent");
+        segments.forEach(seg => {
+          if (!seg.final) {
+            // Interim — show as interimText
+            if (!isAgent) setInterimText(seg.text);
+            return;
+          }
+          setInterimText("");
 
-        // Capture turn index NOW (before async audio save changes it)
-        const thisTurnIndex         = assistantTurnRef.current;
-        assistantTurnRef.current   += 1; // always increment, even for interrupted turns
-        let capturedTranscriptIdx   = -1;
-
-        const player = audioPlayerRef.current;
-        if (player) {
-          player.onPlaybackEnd = () => {
-            aiSpeakingRef.current = false;
-            _stopBargeIn();
-            setVoiceState("idle");
-            setStatusLabel("Listening…");
-            // Always hands-free: auto-restart listening after AI finishes
-            setTimeout(() => startListeningRef.current(), 300);
-          };
-          player.onTurnComplete = async (chunks: ArrayBuffer[]) => {
-            const key = `${sessionIdRef.current}-${thisTurnIndex}`;
-            const url = await audioStoreRef.current?.save(key, chunks) ?? null;
-            if (url && capturedTranscriptIdx >= 0) {
+          if (!isAgent) {
+            // User utterance finalised
+            if (isStopCommand(seg.text)) {
+              setVoiceState("idle");
+              setStatusLabel("Tap to speak");
+              return;
+            }
+            const uIdx = userTurnRef.current;
+            userTurnRef.current += 1;
+            setTranscripts(prev => [
+              ...prev,
+              { role: "user", text: seg.text, timestamp: new Date() },
+            ]);
+            setVoiceState("thinking");
+            setStatusLabel("Thinking…");
+          } else {
+            // Agent TTS transcription — only used as a fallback when word_token
+            // data packets didn't arrive (e.g. backend not streaming).
+            // If word_token already created/populated the bubble (idx >= 0 or sentinel -2),
+            // skip to avoid duplicating text that word_token already streamed.
+            const idx = streamingIdxRef.current;
+            if (idx === -1) {
+              // No word_token bubble yet — create one from TTS transcription
+              streamingIdxRef.current = -2; // sentinel
+              assistantTurnRef.current += 1;
               setTranscripts(prev => {
-                const next = [...prev];
-                if (next[capturedTranscriptIdx]) {
-                  next[capturedTranscriptIdx] = { ...next[capturedTranscriptIdx], audioUrl: url };
-                }
+                const next = [
+                  ...prev,
+                  { role: "assistant" as const, text: seg.text, streaming: true, timestamp: new Date() },
+                ];
+                streamingIdxRef.current = next.length - 1;
                 return next;
               });
             }
-          };
-        }
-
-        bufferedTextRef.current = "";
-        audioStartedRef.current = false;
-        setVoiceState("thinking"); setStatusLabel("Thinking…");
-        setTranscripts(prev => {
-          const next = [...prev, { role: "assistant" as const, text: "", streaming: true, timestamp: new Date() }];
-          streamingIdxRef.current = next.length - 1;
-          capturedTranscriptIdx   = next.length - 1;
-          return next;
+            // idx >= 0 or -2: word_token already streamed this text — skip
+          }
         });
+      });
+
+      // ── Event: data messages from agent (tool_status, turn_done, etc.) ───────
+      room.on(RoomEvent.DataReceived, (payload: Uint8Array, participant: any) => {
+        try {
+          const msg = JSON.parse(new TextDecoder().decode(payload));
+          _handleDataMsg(msg);
+        } catch {}
+      });
+
+      // ── Event: connection state ───────────────────────────────────────────────
+      room.on(RoomEvent.Disconnected, () => {
+        connectedRef.current = false;
+        setConnected(false);
+        setVoiceState("idle");
+        setStatusLabel("Disconnected");
+        aiSpeakingRef.current = false;
+      });
+
+      room.on(RoomEvent.Reconnecting, () => {
+        setStatusLabel("Reconnecting…");
+        setVoiceState("connecting");
+      });
+
+      room.on(RoomEvent.Reconnected, () => {
+        setStatusLabel("Listening…");
+        setVoiceState("listening");
+      });
+
+      // Connect to room
+      await room.connect(ws_url, token);
+
+      // Enable microphone — LiveKit handles STT via the agent subscribing to this track
+      await room.localParticipant.setMicrophoneEnabled(true);
+
+      connectedRef.current = true;
+      setConnected(true);
+      setVoiceState("listening");
+      setStatusLabel("Listening…");
+
+      console.log("[LiveKitVoice] Connected to room:", room.name);
+    } catch (err: any) {
+      console.error("[LiveKitVoice] connect error:", err);
+      setVoiceState("error");
+      setErrorMsg(err?.message || "Failed to connect to voice service");
+      setStatusLabel("Connection failed");
+    }
+  }, [run_id, user?.id]);
+
+  // ── Handle data messages from the agent ──────────────────────────────────────
+  const _handleDataMsg = useCallback((msg: any) => {
+    switch (msg.type) {
+      case "thinking":
+        aiSpeakingRef.current   = false;
+        streamingIdxRef.current = -1;
+        setVoiceState("thinking");
+        setStatusLabel("Thinking…");
+        break;
+
+      // ── word_token: each LLM output token forwarded for real-time transcript sync.
+      // Fires as the LLM generates tokens (~500ms before TTS audio) so the text
+      // appears to stream in sync with the voice.
+      case "word_token": {
+        const token = msg.text || "";
+        if (!token) break;
+        const idx = streamingIdxRef.current;
+        if (idx === -1) {
+          streamingIdxRef.current = -2; // sentinel
+          assistantTurnRef.current += 1;
+          setTranscripts(prev => {
+            const next = [
+              ...prev,
+              { role: "assistant" as const, text: token, streaming: true, timestamp: new Date() },
+            ];
+            streamingIdxRef.current = next.length - 1;
+            return next;
+          });
+        } else if (idx >= 0) {
+          setTranscripts(prev => {
+            const next = [...prev];
+            if (next[idx]) next[idx] = { ...next[idx], text: next[idx].text + token };
+            return next;
+          });
+        }
+        // idx === -2: sentinel in progress — skip, next token will use the real index
         break;
       }
 
-      case "text_chunk":
-        if (audioStartedRef.current) {
-          // Audio already playing — stream text live so it syncs with speech
-          setTranscripts(prev => {
-            const next = [...prev];
-            const idx  = streamingIdxRef.current;
-            if (idx >= 0 && next[idx]) next[idx] = { ...next[idx], text: next[idx].text + msg.text };
-            return next;
-          });
-        } else {
-          // Audio not started yet — buffer text to avoid text appearing before voice
-          bufferedTextRef.current += msg.text;
-        }
-        break;
-
-      case "audio_start":
-        setVoiceState("speaking");
-        setStatusLabel("Speaking… (speak to interrupt)");
-        aiSpeakingRef.current    = true;
-        interruptSentRef.current = false;
-        audioPlayerRef.current?.resume();
-        audioStartedRef.current = true;
-        // Flush any text buffered before audio started — text and audio now appear together
-        if (bufferedTextRef.current) {
-          const flushed = bufferedTextRef.current;
-          bufferedTextRef.current = "";
-          setTranscripts(prev => {
-            const next = [...prev];
-            const idx  = streamingIdxRef.current;
-            if (idx >= 0 && next[idx]) next[idx] = { ...next[idx], text: flushed };
-            return next;
-          });
-        }
-        // Stop any foreground PTT, start barge-in cycle
-        if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch {} recognitionRef.current = null; }
-        _startBargeIn();
-        break;
-
-      case "audio_end":
-        break; // MSE plays continuously — no-op
-
       case "turn_done":
-        // Fallback flush: if no audio (no ElevenLabs key), text was buffered — reveal it now
-        bufferedTextRef.current = "";
-        audioStartedRef.current = false;
         setTranscripts(prev => {
-          const cleaned = prev.filter(t => t.role !== "tool_status");
-          const next    = [...cleaned];
-          const idx     = streamingIdxRef.current;
-          if (idx >= 0 && next[idx]) next[idx] = { ...next[idx], text: msg.text, streaming: false };
+          const next = [...prev];
+          const idx  = streamingIdxRef.current;
+          if (idx >= 0 && next[idx]) {
+            // word_token already built the text — just finalize streaming state.
+            // Only use msg.text if the bubble is empty (word_tokens never arrived).
+            const builtText = next[idx].text;
+            next[idx] = { ...next[idx], text: builtText || msg.text || "", streaming: false };
+          } else if (idx === -2) {
+            // Bubble creation was in progress — find and finalize it
+            const lastStreaming = [...next].reverse().findIndex(t => t.role === "assistant" && t.streaming);
+            const realIdx = lastStreaming >= 0 ? next.length - 1 - lastStreaming : -1;
+            if (realIdx >= 0) {
+              next[realIdx] = { ...next[realIdx], streaming: false };
+            } else if (msg.text) {
+              next.push({ role: "assistant" as const, text: msg.text, streaming: false, timestamp: new Date() });
+            }
+          } else if (msg.text) {
+            // word_tokens never arrived — create completed bubble from full text
+            next.push({ role: "assistant" as const, text: msg.text, streaming: false, timestamp: new Date() });
+          }
           return next;
         });
         streamingIdxRef.current = -1;
-        aiSpeakingRef.current   = false;
-        _stopBargeIn();
-        audioPlayerRef.current?.endTurn();
-        break;
-
-      case "interrupted":
-        aiSpeakingRef.current = false;
-        _stopBargeIn();
-        audioPlayerRef.current?.stop();
-        setVoiceState("idle"); setStatusLabel("Tap to speak");
+        // Only transition to "listening" if the agent ISN'T currently speaking.
+        // turn_done fires when LLM text generation finishes — TTS audio may still
+        // be playing. ActiveSpeakersChanged will transition from "speaking" →
+        // "listening" when the audio actually ends.
+        if (!aiSpeakingRef.current) {
+          setVoiceState("listening");
+          setStatusLabel("Listening…");
+        }
+        aiSpeakingRef.current = false; // allow ActiveSpeakersChanged to re-evaluate
         break;
 
       case "tool_status": {
@@ -660,149 +518,52 @@ export default function VoicePage() {
       }
 
       case "error":
-        setErrorMsg(msg.message || "Unknown error");
+        setErrorMsg(msg.message || "Unknown agent error");
         break;
     }
-  }, [_startBargeIn, _stopBargeIn]);
-
-  // ── Foreground PTT listener ───────────────────────────────────────────────────
-  const _startListening = useCallback(() => {
-    if (bargeInActiveRef.current) {
-      _stopBargeIn();
-      setTimeout(() => startListeningRef.current(), 150);
-      return;
-    }
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) {
-      setErrorMsg("Speech recognition not supported. Use Chrome or Edge.");
-      setVoiceState("error"); return;
-    }
-
-    const rec = new SR();
-    rec.continuous = false; rec.interimResults = true; rec.lang = "en-US"; rec.maxAlternatives = 1;
-    recognitionRef.current = rec;
-
-    // ── Capture mic audio for replay (MediaRecorder alongside SpeechRecognition) ─
-    // Fails silently — user still gets full voice interaction, just no replay button.
-    const audioChunks: Blob[] = [];
-    const userTurnIdx = userTurnRef.current;
-    userTurnRef.current += 1;
-    let capturedUserIdx = -1;
-    if (typeof MediaRecorder !== "undefined" && navigator.mediaDevices?.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(stream => {
-        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-          ? "audio/webm;codecs=opus"
-          : MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
-        const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-        mediaRecorderRef.current = mr;
-        mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
-        mr.onstop = async () => {
-          stream.getTracks().forEach(t => t.stop()); // release mic track
-          if (audioChunks.length === 0 || capturedUserIdx < 0) return;
-          try {
-            const blob = new Blob(audioChunks, { type: mr.mimeType || "audio/webm" });
-            const buf  = await blob.arrayBuffer();
-            const key  = `${sessionIdRef.current}-user-${userTurnIdx}`;
-            const url  = await audioStoreRef.current?.save(key, [buf]) ?? null;
-            if (url) {
-              setTranscripts(prev => {
-                const next = [...prev];
-                if (next[capturedUserIdx]) next[capturedUserIdx] = { ...next[capturedUserIdx], audioUrl: url };
-                return next;
-              });
-            }
-          } catch {}
-        };
-        mr.start();
-      }).catch(() => {}); // permission denied or not supported — continue without recording
-    }
-
-    let lastInterim = "", finalFired = false;
-    const _stopRecording = () => {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-        mediaRecorderRef.current.stop();
-        mediaRecorderRef.current = null;
-      }
-    };
-    const _submit = (text: string) => {
-      setInterimText("");
-      if (isStopCommand(text)) {
-        setVoiceState("idle"); setStatusLabel("Tap to speak");
-        _stopRecording();
-        return;
-      }
-      setTranscripts(prev => {
-        const next = [...prev, { role: "user" as const, text, timestamp: new Date() }];
-        capturedUserIdx = next.length - 1;
-        return next;
-      });
-      _stopRecording(); // triggers onstop → saves audio to IDB
-      wsRef.current?.send(JSON.stringify({ type: "user_text", text }));
-      setVoiceState("thinking"); setStatusLabel("Thinking…");
-    };
-
-    rec.onstart = () => { setVoiceState("listening"); setStatusLabel("Listening… speak now"); setInterimText(""); };
-
-    rec.onresult = (event: any) => {
-      let interim = "", final = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const t = event.results[i][0].transcript;
-        if (event.results[i].isFinal) final += t; else interim += t;
-      }
-      if (interim) { lastInterim = interim; setInterimText(interim); }
-      if (final.trim()) { finalFired = true; lastInterim = ""; _submit(final.trim()); }
-    };
-
-    rec.onerror = (e: any) => {
-      recognitionRef.current = null; setInterimText("");
-      _stopRecording();
-      if (e.error === "not-allowed") {
-        setErrorMsg("Microphone access denied. Allow mic in browser settings.");
-        setVoiceState("error");
-      } else {
-        setVoiceState("idle"); setStatusLabel("Tap to speak");
-      }
-    };
-
-    rec.onend = () => {
-      if (recognitionRef.current !== rec) return;
-      recognitionRef.current = null;
-      if (finalFired) return;
-      if (lastInterim.trim() && wsRef.current?.readyState === WebSocket.OPEN) {
-        _submit(lastInterim.trim());
-      } else {
-        setVoiceState(v => v === "listening" ? "idle" : v);
-        setStatusLabel("Tap to speak"); setInterimText("");
-      }
-    };
-
-    try { rec.start(); } catch (e) {
-      recognitionRef.current = null; setVoiceState("idle"); setStatusLabel("Tap to speak");
-      console.warn("[VoiceAgent] rec.start() failed:", e);
-    }
-  }, [_stopBargeIn]);
-
-  // Keep ref fresh for callbacks (onPlaybackEnd, pendingAction)
-  useEffect(() => { startListeningRef.current = _startListening; }, [_startListening]);
-
-  const _stopListening = useCallback(() => {
-    if (recognitionRef.current) { recognitionRef.current.stop(); recognitionRef.current = null; }
-    setInterimText("");
   }, []);
 
-  // ── Mic button (manual fallback) ─────────────────────────────────────────────
-  const handleMicPress = useCallback(async () => {
-    if (!wsReady) { await _connect(); return; }
-    if (voiceState === "listening") { _stopListening(); }
-    else if (voiceState === "idle") { _startListening(); }
-    else if (voiceState === "speaking") {
-      aiSpeakingRef.current = false;
-      _stopBargeIn();
-      audioPlayerRef.current?.stop();
-      wsRef.current?.send(JSON.stringify({ type: "interrupt" }));
-      _startListening();
+  // ── Disconnect ────────────────────────────────────────────────────────────────
+  const _disconnect = useCallback(async () => {
+    if (roomRef.current) {
+      try {
+        await roomRef.current.disconnect();
+      } catch {}
+      roomRef.current = null;
     }
-  }, [wsReady, voiceState, _connect, _startListening, _stopListening, _stopBargeIn]);
+    connectedRef.current = false;
+    setConnected(false);
+    setVoiceState("idle");
+    setStatusLabel("Tap to speak");
+    setInterimText("");
+    aiSpeakingRef.current = false;
+  }, []);
+
+  // ── Auto-connect + history on mount ──────────────────────────────────────────
+  useEffect(() => {
+    _connect();
+    fetchHistory();
+  }, [run_id]);
+
+  // ── Mic button handler ────────────────────────────────────────────────────────
+  const handleMicPress = useCallback(async () => {
+    if (!connected) { await _connect(); return; }
+
+    if (voiceState === "speaking" && roomRef.current) {
+      // User tapped mic during agent speech — signal interrupt via data message
+      // LiveKit's VAD handles full-duplex interrupt automatically,
+      // but this provides an explicit tap-to-interrupt fallback.
+      try {
+        const payload = new TextEncoder().encode(JSON.stringify({ type: "interrupt" }));
+        await roomRef.current.localParticipant.publishData(payload, { reliable: true });
+      } catch {}
+      aiSpeakingRef.current = false;
+      setVoiceState("listening");
+      setStatusLabel("Listening…");
+    }
+    // In LiveKit mode, the mic is always on and VAD handles turn detection.
+    // The mic button is a visual indicator + explicit interrupt only.
+  }, [connected, voiceState, _connect]);
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -840,7 +601,7 @@ export default function VoicePage() {
         </Link>
         <div>
           <h1 className="text-sm font-semibold text-[var(--text-primary)]">Voice Agent</h1>
-          <p className="text-xs text-[var(--text-secondary)]">Digest #{run_id} · Hands-free</p>
+          <p className="text-xs text-[var(--text-secondary)]">Digest #{run_id} · LiveKit WebRTC</p>
         </div>
         <div className="ml-auto flex items-center gap-3">
           {transcripts.filter(t => t.role !== "tool_status").length > 0 && (
@@ -853,8 +614,8 @@ export default function VoicePage() {
             >Clear</button>
           )}
           <div className="flex items-center gap-1.5">
-            <div className={`w-2 h-2 rounded-full transition-colors ${wsReady ? "bg-green-500" : "bg-gray-400"}`}/>
-            <span className="text-xs text-[var(--text-secondary)]">{wsReady ? "Connected" : "Connecting…"}</span>
+            <div className={`w-2 h-2 rounded-full transition-colors ${connected ? "bg-green-500" : "bg-gray-400"}`}/>
+            <span className="text-xs text-[var(--text-secondary)]">{connected ? "Connected" : "Connecting…"}</span>
           </div>
         </div>
       </div>
@@ -866,15 +627,14 @@ export default function VoicePage() {
             <div className="text-4xl mb-3">🎙️</div>
             <p className="font-medium text-base text-[var(--text-primary)]">Voice Agent</p>
             <p className="mt-1 text-xs max-w-xs mx-auto leading-relaxed opacity-70">
-              Fully hands-free. Radar will greet you and start listening automatically.
-              Speak any time — even while Radar is talking — to interrupt or ask more.
+              Fully hands-free. Radar will start listening automatically.
+              Speak any time — even while Radar is talking — to interrupt.
             </p>
           </div>
         )}
 
         {transcripts.map((t, i) => {
 
-          // Tool status row
           if (t.role === "tool_status") {
             return (
               <div key={i} className="flex items-center gap-2 px-1">
@@ -889,7 +649,6 @@ export default function VoicePage() {
             );
           }
 
-          // User / assistant bubble
           return (
             <div key={i} className={`flex flex-col gap-0.5 ${t.role === "user" ? "items-end" : "items-start"}`}>
               <div className={`flex items-center gap-1.5 px-1 ${t.role === "user" ? "flex-row-reverse" : ""}`}>
@@ -947,7 +706,7 @@ export default function VoicePage() {
         </div>
       )}
 
-      {/* Mic button — manual fallback, always visible */}
+      {/* Mic button */}
       <div className="flex flex-col items-center pb-10 pt-4 gap-3">
         <p className="text-xs text-[var(--text-secondary)] h-4">{statusLabel}</p>
 
@@ -957,7 +716,7 @@ export default function VoicePage() {
           className={`w-20 h-20 rounded-full flex items-center justify-center text-white shadow-lg
             transition-all ${stateColor[voiceState]} hover:opacity-90 active:scale-95
             disabled:opacity-50 disabled:cursor-not-allowed`}
-          aria-label={voiceState === "listening" ? "Stop recording" : "Start speaking"}
+          aria-label={voiceState === "speaking" ? "Interrupt agent" : "Voice status"}
         >
           {voiceState === "thinking"
             ? <span className="flex gap-1">{[0,100,200].map(d => (
@@ -971,8 +730,13 @@ export default function VoicePage() {
             Just speak to interrupt at any time
           </p>
         )}
+        {voiceState === "listening" && (
+          <p className="text-[10px] text-[var(--text-secondary)] text-center max-w-[200px] leading-relaxed opacity-70">
+            Mic always on · Deepgram VAD detects when you speak
+          </p>
+        )}
 
-        {wsReady && (
+        {connected && (
           <button onClick={_disconnect}
             className="text-xs text-[var(--text-secondary)] hover:text-red-400 transition-colors mt-1">
             End session

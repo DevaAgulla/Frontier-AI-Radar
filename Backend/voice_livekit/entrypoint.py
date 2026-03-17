@@ -1,10 +1,12 @@
-"""LiveKit worker process entrypoint.
+"""LiveKit worker process entrypoint — STANDALONE fallback.
 
-Runs the LiveKit Agents worker that accepts rooms and spawns a VoiceAgent
-per connection. This process runs *alongside* the existing FastAPI server —
-it is not part of the FastAPI app.
+NOTE: The LiveKit worker is now embedded inside FastAPI's lifespan event
+(api/main.py). You do NOT need to run this file separately.
 
-Usage:
+This file only exists as a standalone fallback for debugging the worker
+in isolation, without starting the full FastAPI server.
+
+Usage (standalone debug only):
     cd Backend
     python -m voice_livekit.entrypoint dev    # hot-reload for development
     python -m voice_livekit.entrypoint start  # production

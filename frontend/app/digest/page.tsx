@@ -515,7 +515,7 @@ function AudioModal({ runId, date, onClose }: { runId: string; date: string; onC
           <p className="text-center text-[10px] text-[var(--text-muted)] mt-2">
             Want deeper insights?{" "}
             <Link href={`/digest/${runId}/chat`} className="text-[var(--primary)] hover:underline font-medium">
-              Interact with AI →
+              Interact →
             </Link>
           </p>
         </div>
@@ -536,7 +536,7 @@ const AGENT_OPTIONS = [
 function NewBriefModal({ user, onClose, onTriggered }: {
   user: { id: number; name: string } | null;
   onClose: () => void;
-  onTriggered: (runId: string | null) => void;
+  onTriggered: (runId: string | null, period: "daily" | "weekly" | "monthly") => void;
 }) {
   const [selected, setSelected] = useState<string[]>(["research", "competitor", "model", "benchmark"]);
   const [period, setPeriod] = useState<"daily" | "weekly" | "monthly">("daily");
@@ -566,7 +566,7 @@ function NewBriefModal({ user, onClose, onTriggered }: {
       setState("triggered");
       // Close modal after brief confirmation; hand off run tracking to parent
       setTimeout(() => {
-        onTriggered(rid && !rid.startsWith("pending-") ? rid : null);
+        onTriggered(rid && !rid.startsWith("pending-") ? rid : null, period);
         onClose();
       }, 1500);
     } catch (e: any) { setState("error"); setError(e.message || "Something went wrong"); }
@@ -1021,6 +1021,7 @@ export default function DigestPage() {
   const startBgPoll = useCallback((rid: string | null) => {
     setBgRunId(rid);
     setBgRunning(true);
+    loadDigests(); // show the in-progress card immediately
     if (bgPollRef.current) clearInterval(bgPollRef.current);
     bgPollRef.current = setInterval(async () => {
       try {
@@ -1082,7 +1083,7 @@ export default function DigestPage() {
     <div className="flex h-screen bg-[var(--bg)] overflow-hidden">
       {audioModal && <AudioModal runId={audioModal.runId} date={audioModal.date} onClose={() => setAudioModal(null)} />}
       {pdfModal && <PdfViewerModal pdfUrl={pdfModal.url} date={pdfModal.date} onClose={() => setPdfModal(null)} />}
-      {newBriefOpen && <NewBriefModal user={user} onClose={() => setNewBriefOpen(false)} onTriggered={(rid) => startBgPoll(rid)} />}
+      {newBriefOpen && <NewBriefModal user={user} onClose={() => setNewBriefOpen(false)} onTriggered={(rid, period) => { setActivePeriod(period); startBgPoll(rid); }} />}
       {runStatusId && <RunStatusModal runId={runStatusId} onClose={() => setRunStatusId(null)} />}
 
       {/* ── Left sidebar: digest list ── */}

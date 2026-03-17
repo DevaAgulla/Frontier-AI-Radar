@@ -54,7 +54,7 @@ logger = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: initialise DB, run schema migrations.
+    """Startup: initialise DB, run schema migrations, start LiveKit worker.
 
     Scheduling is handled by Celery beat (external process).
     APScheduler is started only when Celery is not available (dev / single-server).
@@ -63,11 +63,33 @@ async def lifespan(app: FastAPI):
     from db.chat import ensure_chat_schema
     ensure_chat_schema()
 
+    # Pre-warm the embedding thread pool.
+    # init_pool() creates the ThreadPoolExecutor and submits dummy tasks to force
+    # thread creation — _thread_initializer loads the SentenceTransformer model
+    # in each worker thread right now, not on the first chat request.
+    try:
+        from core.embedding_executor import init_pool
+        init_pool()
+        logger.info("embedding_pool_initialized")
+    except Exception as _emb_err:
+        logger.warning("embedding_pool_init_failed", error=str(_emb_err))
+
+    # Pre-warm the chat LangGraph graph.
+    # _get_chat_graph() is normally lazy (first /chat/ask call pays 1-2s to build
+    # the graph + establish checkpointer connection). Schedule it as a background
+    # task so it runs concurrently with server startup — warm before first request.
+    async def _prewarm_chat_graph():
+        try:
+            await _get_chat_graph()
+            logger.info("chat_graph_prewarmed")
+        except Exception as _g_err:
+            logger.warning("chat_graph_prewarm_failed", error=str(_g_err))
+    asyncio.create_task(_prewarm_chat_graph())
+
     # Start APScheduler only when Celery beat is not running this deployment
     celery_beat_running = False
     try:
         from workers.celery_app import celery_app as _ca
-        # Quick broker ping — if it succeeds, beat handles scheduling
         _ca.control.ping(timeout=1)
         celery_beat_running = True
     except Exception:
@@ -76,7 +98,46 @@ async def lifespan(app: FastAPI):
     if not celery_beat_running and _apscheduler_available:
         start_scheduler()
 
+    # ── Start LiveKit voice worker in background (same process, same event loop)
+    # Requires LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET in .env
+    # Skipped silently if credentials are missing or livekit-agents is not installed.
+    _livekit_task = None
+    try:
+        _lk_url    = settings.livekit_url    or os.environ.get("LIVEKIT_URL", "")
+        _lk_key    = settings.livekit_api_key or os.environ.get("LIVEKIT_API_KEY", "")
+        _lk_secret = settings.livekit_api_secret or os.environ.get("LIVEKIT_API_SECRET", "")
+
+        if _lk_url and _lk_key and _lk_secret:
+            from livekit.agents import WorkerOptions
+            from livekit.agents.worker import AgentServer
+            from voice_livekit.agent import entrypoint as _lk_entrypoint
+
+            _lk_worker = AgentServer.from_server_options(
+                WorkerOptions(
+                    entrypoint_fnc = _lk_entrypoint,
+                    ws_url         = _lk_url,
+                    api_key        = _lk_key,
+                    api_secret     = _lk_secret,
+                )
+            )
+            _livekit_task = asyncio.create_task(_lk_worker.run(devmode=True))
+            logger.info("livekit_worker_started", url=_lk_url)
+        else:
+            logger.info("livekit_worker_skipped", reason="credentials not set — voice falls back to WebSocket")
+    except ImportError as _lk_imp_err:
+        logger.warning("livekit_worker_skipped", reason=str(_lk_imp_err))
+    except Exception as _lk_err:
+        logger.warning("livekit_worker_failed", error=str(_lk_err))
+
     yield
+
+    # ── Shutdown
+    if _livekit_task and not _livekit_task.done():
+        _livekit_task.cancel()
+        try:
+            await _livekit_task
+        except asyncio.CancelledError:
+            pass
 
     if not celery_beat_running and _apscheduler_available:
         stop_scheduler()
@@ -438,6 +499,7 @@ async def _generate_llm_section_comparison(
 class RunRequest(BaseModel):
     mode: str = "full"
     since_days: int = 1
+    period: str = "daily"                  # "daily" | "weekly" | "monthly" — used for tab filtering
     user_id: Optional[int] = None          # subscribed user id (UI trigger)
     email: Optional[str] = None            # ad-hoc email (UI trigger, no subscription needed)
     extra_recipients: List[str] = []       # additional emails to CC alongside user_id/email
@@ -590,6 +652,7 @@ async def run(req: RunRequest):
             "url_mode": req.url_mode,
             "custom_urls": req.urls,
             "email_recipients": email_recipients,
+            "period": req.period,
         }
         state = await run_radar(
             mode=req.mode,
@@ -671,9 +734,10 @@ async def run_async(req: RunRequest):
     celery_available = False
     try:
         from workers.tasks import run_digest_pipeline, generate_audio_task, upload_blob_task
-        from cache.redis_client import invalidate_digest_cache
+        from cache.redis_client import invalidate_digest_cache, invalidate_prefetch_runs
         if run_db_id:
             invalidate_digest_cache(run_db_id)
+        invalidate_prefetch_runs()   # bust runs/dashboard cache so fresh data is served
         digest_step = run_digest_pipeline.s(
             run_db_id=run_db_id,
             mode=req.mode,
@@ -723,6 +787,97 @@ async def run_async(req: RunRequest):
 @app.get("/health")
 async def health():
     return {"status": "ok", "valid_agents": sorted(VALID_AGENTS)}
+
+
+# ── Login-time prefetch ───────────────────────────────────────────────────────
+
+@app.get("/api/v1/prefetch")
+async def prefetch_user_data(user_id: Optional[int] = Query(default=None)):
+    """Single endpoint called once at login.
+
+    Runs all expensive read queries in parallel, warms Redis, and returns the
+    full payload so the frontend can hydrate its local state in one network round
+    trip. Subsequent calls to /runs, /dashboard, /audio/{id}/presets all hit
+    Redis (<2 ms) instead of PostgreSQL.
+
+    Cache TTLs: runs/dashboard = 15 min, presets = 1 h.
+    """
+    from cache.redis_client import (
+        get_prefetch_runs, set_prefetch_runs,
+        get_prefetch_dashboard, set_prefetch_dashboard,
+        get_prefetch_presets, set_prefetch_presets,
+    )
+
+    # ── runs ────────────────────────────────────────────────────────────────
+    async def _warm_runs() -> list:
+        cached = get_prefetch_runs()
+        if cached is not None:
+            return cached
+        data = await get_runs()          # call the existing handler directly
+        set_prefetch_runs(data)
+        return data
+
+    # ── dashboard ───────────────────────────────────────────────────────────
+    async def _warm_dashboard() -> dict:
+        cached = get_prefetch_dashboard()
+        if cached is not None:
+            return cached
+        data = await get_dashboard()
+        set_prefetch_dashboard(data)
+        return data
+
+    runs_result, dashboard_result = await asyncio.gather(
+        asyncio.wait_for(_warm_runs(),      timeout=12.0),
+        asyncio.wait_for(_warm_dashboard(), timeout=12.0),
+        return_exceptions=True,
+    )
+
+    # ── presets + popular questions for the latest run ───────────────────────
+    from cache.redis_client import (
+        get_popular_questions_cached, set_popular_questions_cached,
+    )
+    latest_run_id: Optional[int] = None
+    presets_result  = None
+    popular_result  = None
+
+    if isinstance(runs_result, list) and runs_result:
+        latest_run_id = runs_result[0].get("run_id")
+        if latest_run_id:
+            # Presets
+            cached_p = get_prefetch_presets(latest_run_id)
+            if cached_p is not None:
+                presets_result = cached_p
+            else:
+                try:
+                    presets_result = await asyncio.wait_for(
+                        list_audio_presets(latest_run_id), timeout=8.0
+                    )
+                    set_prefetch_presets(latest_run_id, presets_result)
+                except Exception:
+                    pass
+
+            # Popular questions (quick-prompts chip data)
+            cached_q = get_popular_questions_cached(latest_run_id)
+            if cached_q is not None:
+                popular_result = cached_q
+            else:
+                try:
+                    from db.chat import get_popular_questions
+                    db_pop = await asyncio.get_running_loop().run_in_executor(
+                        None, lambda: get_popular_questions(latest_run_id, limit=5)
+                    )
+                    popular_result = [p["question"] for p in db_pop]
+                    set_popular_questions_cached(latest_run_id, popular_result)
+                except Exception:
+                    pass
+
+    return {
+        "runs":              runs_result      if not isinstance(runs_result, Exception)      else [],
+        "dashboard":         dashboard_result if not isinstance(dashboard_result, Exception) else {},
+        "presets":           presets_result,
+        "popular_questions": popular_result,
+        "latest_run_id":     latest_run_id,
+    }
 
 
 # ── User subscription ────────────────────────────────────────────────────
@@ -1043,6 +1198,29 @@ def _parse_json(text: Optional[str]) -> Any:
         return {}
 
 
+def _load_persona_prompt(persona_id: str) -> Optional[str]:
+    """Load the digest_system_prompt for the given persona_type slug from DB.
+
+    Returns None if persona not found or DB unavailable.
+    """
+    if not persona_id:
+        return None
+    try:
+        from db.connection import get_session as db_session
+        from sqlalchemy import text
+        with db_session() as sess:
+            row = sess.execute(text("""
+                SELECT digest_system_prompt
+                FROM   ai_radar.persona_templates
+                WHERE  persona_type = :pid AND is_system_default = TRUE
+                LIMIT  1
+            """), {"pid": persona_id}).fetchone()
+        return row[0] if row and row[0] else None
+    except Exception as exc:
+        logger.warning("persona_load_failed", persona_id=persona_id, error=str(exc))
+        return None
+
+
 @app.get("/api/v1/runs")
 async def get_runs(
     status: Optional[str] = Query(default=None),
@@ -1055,6 +1233,13 @@ async def get_runs(
     Response: list of run objects, each with nested findings[] and resources[].
     Binary fields (html_content, pdf_content) are excluded to keep it lightweight.
     """
+    # ── L1: prefetch cache (unfiltered list only) ─────────────────────────
+    if not status and not start_date and not end_date:
+        from cache.redis_client import get_prefetch_runs
+        _cached = get_prefetch_runs()
+        if _cached:          # non-empty list only — empty [] falls through to DB
+            return _cached
+
     with get_session() as session:
         query = session.query(Run).order_by(Run.started_at.desc())
         runs = query.all()
@@ -1127,6 +1312,7 @@ async def get_runs(
             recipient_emails = extraction_meta.get("email_recipients", [])
             custom_urls = extraction_meta.get("custom_urls", [])
             requested_mode = extraction_meta.get("requested_mode", "full")
+            period = extraction_meta.get("period", "daily")
 
             result.append({
                 "run_id": run.id,
@@ -1134,6 +1320,7 @@ async def get_runs(
                 "user_id": run.user_id,
                 "user_name": user.name if user else None,
                 "mode": requested_mode,
+                "period": period,
                 "status": normalized_status,
                 "time_taken": run.time_taken,
                 "started_at": run.started_at.isoformat() if run.started_at else None,
@@ -1148,6 +1335,11 @@ async def get_runs(
                 "findings": findings_out,
                 "resources": resources_out,
             })
+
+    # ── Write-through: warm Redis for next request (only non-empty results) ─
+    if not status and not start_date and not end_date and result:
+        from cache.redis_client import set_prefetch_runs
+        set_prefetch_runs(result)
 
     return result
 
@@ -1285,6 +1477,12 @@ async def get_run_logs(run_id: int):
 
 @app.get("/api/v1/dashboard")
 async def get_dashboard():
+    # ── L1: prefetch cache ────────────────────────────────────────────────
+    from cache.redis_client import get_prefetch_dashboard, set_prefetch_dashboard
+    _cached = get_prefetch_dashboard()
+    if _cached and _cached.get("last_run") is not None:   # only serve if it has real data
+        return _cached
+
     with get_session() as session:
         last_run = session.query(Run).order_by(Run.started_at.desc()).first()
         top_rows = session.query(Finding).order_by(Finding.id.desc()).limit(50).all()
@@ -1316,7 +1514,7 @@ async def get_dashboard():
         top_findings.sort(key=lambda x: x.get("impact_score", 0), reverse=True)
         top_findings = top_findings[:10]
 
-        return {
+        result = {
             "last_run": (
                 {
                     "run_id": last_run.id,
@@ -1329,6 +1527,8 @@ async def get_dashboard():
             ),
             "top_findings": top_findings,
         }
+        set_prefetch_dashboard(result)
+        return result
 
 
 @app.get("/api/v1/findings")
@@ -1940,6 +2140,12 @@ async def list_audio_presets(run_id: int):
       { "script_ready": bool,
         "presets": [{ "id", "label", "gender", "style", "is_ready", "audio_url" }, ...] }
     """
+    # ── L1: prefetch cache ────────────────────────────────────────────────
+    from cache.redis_client import get_prefetch_presets, set_prefetch_presets
+    _cached = get_prefetch_presets(run_id)
+    if _cached and _cached.get("presets") is not None:   # only serve if it has real data
+        return _cached
+
     from db.models import VoicePreset, RunAudioPreset
     from storage.blob import is_configured, get_or_refresh_preset_sas
     from db.persist import update_audio_preset_sas
@@ -1984,7 +2190,9 @@ async def list_audio_presets(run_id: int):
                 "audio_url": audio_url,
             })
 
-    return {"script_ready": script_ready, "presets": preset_list}
+    result = {"script_ready": script_ready, "presets": preset_list}
+    set_prefetch_presets(run_id, result)
+    return result
 
 
 @app.post("/api/v1/audio/{run_id}/generate")
@@ -2098,18 +2306,56 @@ async def generate_audio_on_demand(
             logger.warning("audio_generate: blob upload failed, keeping local", error=str(exc))
 
     update_audio_preset_path(run_id, preset_id, stored_path)
+    # Bust the presets cache so the next fetch picks up the new is_ready=True state
+    from cache.redis_client import invalidate_prefetch_presets
+    invalidate_prefetch_presets(run_id)
     logger.info("audio_generate: done", run_id=run_id, preset=preset_id)
     return {"status": "done", "preset_id": preset_id,
             "audio_url": f"/api/audio/{run_id}?preset_id={preset_id}"}
+
+
+# ── Persona Templates ────────────────────────────────────────────────────────
+
+@app.get("/api/v1/personas")
+async def get_personas():
+    """Return all public system persona templates for the UI.
+
+    IMPORTANT: digest_system_prompt is NOT returned here — it is loaded
+    server-side only when building LLM calls. The frontend receives only
+    the display fields needed to render the persona selector.
+    """
+    try:
+        from db.connection import get_session as db_session
+        from sqlalchemy import text
+        with db_session() as sess:
+            rows = sess.execute(text("""
+                SELECT persona_type, name, description, suggested_questions
+                FROM   ai_radar.persona_templates
+                WHERE  visibility = 'public' AND is_system_default = TRUE
+                ORDER  BY created_at ASC
+            """)).fetchall()
+        return [
+            {
+                "id":          r[0],
+                "label":       r[1],
+                "description": r[2],
+                "prompts":     r[3] if isinstance(r[3], list) else [],
+            }
+            for r in rows
+        ]
+    except Exception as exc:
+        logger.warning("personas_load_failed", error=str(exc))
+        return []
 
 
 # ── LiveKit Voice Token ───────────────────────────────────────────────────────
 
 @app.get("/api/v1/voice/livekit-token")
 async def get_livekit_token(
-    run_id:  int  = Query(..., description="Digest run ID"),
-    user_id: Optional[int] = Query(default=None),
-    voice:   str  = Query(default="rachel", description="Voice preset: rachel | adam | elli"),
+    run_id:     int           = Query(..., description="Digest run ID"),
+    user_id:    Optional[int] = Query(default=None),
+    voice:      str           = Query(default="rachel", description="Voice preset: rachel | adam | elli"),
+    persona_id: Optional[str] = Query(default=None, description="Persona type slug"),
 ):
     """
     Generate a LiveKit access token for the client to join a voice room.
@@ -2123,9 +2369,9 @@ async def get_livekit_token(
     Returns:
         {token: str, ws_url: str, room: str}
     """
-    livekit_api_key    = os.environ.get("LIVEKIT_API_KEY", "")
-    livekit_api_secret = os.environ.get("LIVEKIT_API_SECRET", "")
-    livekit_url        = os.environ.get("LIVEKIT_URL", "")
+    livekit_api_key    = settings.livekit_api_key    or os.environ.get("LIVEKIT_API_KEY", "")
+    livekit_api_secret = settings.livekit_api_secret or os.environ.get("LIVEKIT_API_SECRET", "")
+    livekit_url        = settings.livekit_url        or os.environ.get("LIVEKIT_URL", "")
 
     if not all([livekit_api_key, livekit_api_secret, livekit_url]):
         raise HTTPException(
@@ -2141,19 +2387,51 @@ async def get_livekit_token(
             detail="livekit-api package not installed. Run: pip install livekit-api",
         )
 
-    room_name = f"radar-{run_id}" + (f"-{user_id}" if user_id else "")
-    identity  = f"user-{user_id or 0}-{run_id}"
+    room_name     = f"radar-{run_id}" + (f"-{user_id}" if user_id else "")
+    identity      = f"user-{user_id or 0}-{run_id}"
+    room_metadata = json.dumps({"voice": voice, "persona_id": persona_id or ""})
+
+    # Create (or update) the LiveKit room with metadata via the server API.
+    # This is the correct pattern: ctx.room.metadata in the agent reads ROOM-level
+    # metadata, which must be set server-side — not via the participant's token.
+    # AccessToken.with_metadata() sets participant metadata (different thing).
+    try:
+        from livekit import api as _lk_server
+        async with _lk_server.LiveKitAPI(
+            url=livekit_url,
+            api_key=livekit_api_key,
+            api_secret=livekit_api_secret,
+        ) as _lk_api:
+            try:
+                await _lk_api.room.create_room(
+                    _lk_server.CreateRoomRequest(
+                        name=room_name,
+                        metadata=room_metadata,
+                    )
+                )
+            except Exception:
+                # Room already exists — update its metadata
+                await _lk_api.room.update_room_metadata(
+                    _lk_server.UpdateRoomMetadataRequest(
+                        room=room_name,
+                        metadata=room_metadata,
+                    )
+                )
+    except Exception as _room_err:
+        logger.warning("livekit_room_metadata_failed", error=str(_room_err),
+                       note="agent will fall back to participant metadata")
 
     token = (
         AccessToken(livekit_api_key, livekit_api_secret)
         .with_identity(identity)
         .with_name(f"User {user_id or 'anonymous'}")
         .with_grants(VideoGrants(room_join=True, room=room_name))
-        .with_metadata(voice)          # agent reads this to pick TTS voice
+        .with_metadata(room_metadata)   # also set on participant as redundant fallback
         .to_jwt()
     )
 
-    logger.info("livekit_token: issued", room=room_name, user=identity, voice=voice)
+    logger.info("livekit_token: issued", room=room_name, user=identity, voice=voice,
+                persona_id=persona_id or "")
     return {"token": token, "ws_url": livekit_url, "room": room_name}
 
 
@@ -2177,11 +2455,17 @@ async def get_voice_history(
     overwrite existing ones.
     """
     from db.chat import get_or_create_session, load_voice_history
+    from sqlalchemy.exc import IntegrityError
 
-    info       = get_or_create_session(run_id=run_id, user_id=user_id)
-    session_id = info["session_id"]
-    is_new     = info.get("is_new", False)
-    messages   = load_voice_history(session_id)
+    try:
+        info       = get_or_create_session(run_id=run_id, user_id=user_id)
+        session_id = info["session_id"]
+        is_new     = info.get("is_new", False)
+        messages   = load_voice_history(session_id)
+    except IntegrityError:
+        # run_id doesn't exist in the runs table yet — return empty history
+        logger.warning("voice_history_run_not_found", run_id=run_id)
+        return {"session_id": None, "is_new": True, "messages": []}
 
     return {
         "session_id": session_id,
@@ -2339,47 +2623,88 @@ def _lg_messages_to_chat_format(lg_messages: list) -> list:
 
 @app.get("/api/v1/chat/session")
 async def get_chat_session(
-    run_id:  int           = Query(...),
-    user_id: Optional[int] = Query(default=None),
+    run_id:     int           = Query(...),
+    user_id:    Optional[int] = Query(default=None),
+    persona_id: Optional[str] = Query(default=None),
 ):
     """
-    Get-or-create a chat session for (user_id, run_id) and return the most
-    recent 10 messages from the DB.
+    Get-or-create a chat session for (user_id, run_id, persona_id) and return
+    the most recent 10 messages.
 
-    For authenticated users the most-recently-active session for (user_id,
-    run_id) is found directly via a JOIN — no client-side session_id needed.
+    Cache hierarchy (3 Redis checks → 0-1 DB calls on repeat visits):
+      L1  session:meta:{uid}:{rid}:{pid}              → session_id lookup  (7 d)
+      L2  chat:session:{session_id}:messages           → message list      (48 h)
+      L3  prefetch:run:{run_id}:popular                → quick prompts     (1 h)
+      L4  PostgreSQL (only on first visit per persona or after TTL expiry)
     """
-    from db.chat import (
-        get_or_create_session,
-        get_recent_messages_for_run,
-        get_popular_questions,
+    from cache.redis_client import (
+        get_session_meta, set_session_meta,
+        rget_messages, rwarm_messages,
+        get_popular_questions_cached, set_popular_questions_cached,
     )
+    from db.chat import get_or_create_session, load_session_messages, get_popular_questions
 
+    _persona_id = persona_id or ''
     messages: list = []
     session_id: Optional[str] = None
     is_new = False
 
-    # ── Authenticated: pull the 10 most recent messages straight from DB ──
+    # ── L1: session_id lookup from Redis ──────────────────────────────────
     if user_id:
-        messages, session_id = get_recent_messages_for_run(
-            user_id=user_id, run_id=run_id, limit=10
-        )
-
-    # ── Resolve / create session row ──────────────────────────────────────
-    if not session_id:
-        session_info = get_or_create_session(run_id=run_id, user_id=user_id)
+        meta = get_session_meta(user_id, run_id, _persona_id)
+        if meta:
+            session_id = meta["session_id"]
+        else:
+            # L4: DB — get or create, then write to Redis
+            session_info = get_or_create_session(run_id=run_id, user_id=user_id, persona_id=_persona_id)
+            session_id   = session_info["session_id"]
+            is_new       = session_info["is_new"]
+            set_session_meta(user_id, run_id, _persona_id, {"session_id": session_id, "is_new": is_new})
+    else:
+        # Anonymous — always create fresh (not cached)
+        session_info = get_or_create_session(run_id=run_id, user_id=None, persona_id=_persona_id)
         session_id   = session_info["session_id"]
         is_new       = session_info["is_new"]
 
-    popular = get_popular_questions(run_id=run_id, limit=5)
+    # ── L2: messages from Redis (only for existing sessions) ──────────────
+    if session_id and not is_new:
+        cached_msgs = rget_messages(session_id)
+        if cached_msgs is not None:
+            messages = cached_msgs[-10:]   # keep last 10 for the UI
+        else:
+            # L4: DB — load messages, then warm Redis for next visit
+            db_messages = load_session_messages(session_id, limit=10)
+            if db_messages:
+                messages = db_messages
+                rwarm_messages(session_id, db_messages)
+
+    # ── L3: popular questions from Redis ──────────────────────────────────
+    popular = get_popular_questions_cached(run_id)
+    if popular is None:
+        db_pop  = get_popular_questions(run_id=run_id, limit=5)
+        popular = [p["question"] for p in db_pop]
+        set_popular_questions_cached(run_id, popular)
 
     return {
         "session_id":        session_id,
         "is_new":            is_new,
+        "persona_id":        _persona_id,
         "message_count":     len(messages),
         "messages":          messages,
-        "popular_questions": [p["question"] for p in popular],
+        "popular_questions": popular,
     }
+
+
+@app.get("/api/v1/chat/sessions")
+async def get_chat_sessions_for_persona(
+    user_id:    int           = Query(...),
+    persona_id: Optional[str] = Query(default=None),
+    run_id:     Optional[int] = Query(default=None),
+    limit:      int           = Query(default=10),
+):
+    """Return recent sessions for (user_id, persona_id), optionally scoped to run_id."""
+    from db.chat import get_sessions_for_persona
+    return get_sessions_for_persona(user_id, persona_id or '', run_id, limit)
 
 
 # ── Production Chat Agent — LangGraph ReAct + streaming SSE ──────────────
@@ -2406,6 +2731,7 @@ class ChatAskRequest(BaseModel):
     mode:       str = "text"               # "text" (SSE stream) | "voice" (JSON + audio)
     session_id: Optional[str] = None
     user_id:    Optional[int] = None
+    persona_id: Optional[str] = None       # persona_type slug (e.g. "sales_leader")
 
 
 @app.post("/api/v1/chat/ask")
@@ -2435,14 +2761,19 @@ async def chat_ask(req: ChatAskRequest):
     except ValueError:
         raise HTTPException(status_code=400, detail="run_id must be a valid integer")
 
+    _persona_id = req.persona_id or ''
     session_id = req.session_id
     if not session_id:
-        info       = get_or_create_session(run_id=run_id_int, user_id=req.user_id)
+        info       = get_or_create_session(
+            run_id=run_id_int, user_id=req.user_id, persona_id=_persona_id
+        )
         session_id = info["session_id"]
 
     # ── Load conversation context first — needed for cache bypass decision ─
     from db.chat import get_recent_messages
-    session_ctx    = get_or_create_session(run_id=run_id_int, user_id=req.user_id)
+    session_ctx    = get_or_create_session(
+        run_id=run_id_int, user_id=req.user_id, persona_id=_persona_id
+    )
     window_context = session_ctx.get("window_context")
     prior_messages = get_recent_messages(session_id, limit=10)
     has_history    = bool(prior_messages)
@@ -2486,10 +2817,16 @@ async def chat_ask(req: ChatAskRequest):
     if not radar_graph:
         raise HTTPException(status_code=503, detail="Chat graph not available")
 
+    # Load persona system prompt if persona selected
+    persona_prompt: Optional[str] = None
+    if req.persona_id:
+        persona_prompt = _load_persona_prompt(req.persona_id)
+
     chat_state   = create_chat_initial_state(
         run_id_int, req.message, session_id, req.mode,
         prior_messages=prior_messages,
         window_context=window_context,
+        persona_system_prompt=persona_prompt,
     )
     agent_config = {"configurable": {"thread_id": f"chat_{session_id}"}}
 
@@ -2515,10 +2852,22 @@ async def chat_ask(req: ChatAskRequest):
         asyncio.create_task(
             _save_to_cache(run_id_int, req.message, response_text, [], req.mode)
         )
-        from db.chat import save_message
+        from db.chat import save_message, get_last_message_id, embed_message_background
         try:
             save_message(session_id, "user", req.message, mode=req.mode)
+            user_msg_id = get_last_message_id(session_id)
+            asyncio.create_task(asyncio.to_thread(
+                embed_message_background,
+                session_id, user_msg_id, "user", req.message,
+                req.user_id, _persona_id, run_id_int,
+            ))
             count = save_message(session_id, "assistant", response_text, mode=req.mode)
+            asst_msg_id = get_last_message_id(session_id)
+            asyncio.create_task(asyncio.to_thread(
+                embed_message_background,
+                session_id, asst_msg_id, "assistant", response_text,
+                req.user_id, _persona_id, run_id_int,
+            ))
             if count % 5 == 0:
                 asyncio.create_task(_summarise_and_update(session_id, count))
         except Exception as _e:
@@ -2577,11 +2926,26 @@ async def chat_ask(req: ChatAskRequest):
                 )
                 # Save messages to DB synchronously so next request has history
                 # Summary generation (every 5 msgs) runs in background — it's the slow part
-                from db.chat import save_message, load_session_messages, update_window_context
+                from db.chat import (
+                    save_message, load_session_messages, update_window_context,
+                    get_last_message_id, embed_message_background,
+                )
                 try:
                     save_message(session_id, "user", req.message, mode=req.mode)
+                    user_msg_id = get_last_message_id(session_id)
+                    asyncio.create_task(asyncio.to_thread(
+                        embed_message_background,
+                        session_id, user_msg_id, "user", req.message,
+                        req.user_id, _persona_id, run_id_int,
+                    ))
                     count = save_message(session_id, "assistant", full_text,
                                          sources=source_urls, mode=req.mode)
+                    asst_msg_id = get_last_message_id(session_id)
+                    asyncio.create_task(asyncio.to_thread(
+                        embed_message_background,
+                        session_id, asst_msg_id, "assistant", full_text,
+                        req.user_id, _persona_id, run_id_int,
+                    ))
                     if count % 5 == 0:
                         asyncio.create_task(
                             _summarise_and_update(session_id, count)
@@ -2715,8 +3079,79 @@ async def _make_voice_response(response_text: str, source_urls: List[str]) -> di
     }
 
 
+def _cache_digest_sections_background(run_id: int) -> None:
+    """Load digest findings from DB, group by agent into sections, and cache embeddings.
+
+    Designed to run in a thread via asyncio.to_thread() — never raises.
+    """
+    try:
+        from db.chat import cache_digest_for_run
+        from db.connection import get_session as db_session
+        from sqlalchemy import text
+
+        with db_session() as session:
+            rows = session.execute(text("""
+                SELECT f.agent_name, f.metadata_
+                FROM   ai_radar.findings f
+                JOIN   ai_radar.extractions e ON e.id = f.extraction_id
+                JOIN   ai_radar.runs r ON r.extraction_id = e.id
+                WHERE  r.id = :rid
+                ORDER  BY f.agent_name, f.id
+            """), {"rid": run_id}).fetchall()
+
+        if not rows:
+            # Fallback: try ai_data_radar schema
+            with db_session() as session:
+                rows = session.execute(text("""
+                    SELECT f.agent_name, f.metadata_
+                    FROM   ai_data_radar.findings f
+                    JOIN   ai_data_radar.extractions e ON e.id = f.extraction_id
+                    JOIN   ai_data_radar.runs r ON r.extraction_id = e.id
+                    WHERE  r.id = :rid
+                    ORDER  BY f.agent_name, f.id
+                """), {"rid": run_id}).fetchall()
+
+        if not rows:
+            logger.warning("cache_digest_sections_no_findings", run_id=run_id)
+            return
+
+        import json as _json
+        from collections import defaultdict
+        by_agent: dict = defaultdict(list)
+        for agent_name, metadata_ in rows:
+            meta = _json.loads(metadata_) if isinstance(metadata_, str) else (metadata_ or {})
+            title   = meta.get("title", "")
+            summary = meta.get("what_changed") or meta.get("summary", "")
+            why     = meta.get("why_it_matters", "")
+            piece = title
+            if summary:
+                piece += f". {summary}"
+            if why:
+                piece += f" Why it matters: {why}"
+            by_agent[agent_name].append(piece.strip())
+
+        sections = []
+        for agent_name, pieces in by_agent.items():
+            content = "\n".join(p for p in pieces if p)
+            if content:
+                sections.append({"section": agent_name, "content": content})
+
+        cache_digest_for_run(run_id, sections)
+
+    except Exception as exc:
+        logger.warning("cache_digest_sections_background_failed", run_id=run_id, error=str(exc))
+
+
+@app.post("/api/v1/digest/{run_id}/cache")
+async def cache_digest(run_id: int):
+    """Trigger background embedding of digest sections for this run_id."""
+    asyncio.create_task(asyncio.to_thread(_cache_digest_sections_background, run_id))
+    return {"status": "queued", "run_id": run_id}
+
+
 # ── Start ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("api.main:app", host="0.0.0.0", port=port)
+    uvicorn.run("api.main:app", host="0.0.0.0", port=port,
+                loop="asyncio" if sys.platform == "win32" else "auto")

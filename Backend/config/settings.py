@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     azure_blob_connection_string: Optional[str] = Field(default=None, env="AZURE_BLOB_CONNECTION_STRING")
     azure_blob_container: Optional[str] = Field(default=None, env="AZURE_BLOB_CONTAINER")
 
+    # LiveKit — real-time voice agent (WebRTC)
+    livekit_url: Optional[str] = Field(default=None, env="LIVEKIT_URL")
+    livekit_api_key: Optional[str] = Field(default=None, env="LIVEKIT_API_KEY")
+    livekit_api_secret: Optional[str] = Field(default=None, env="LIVEKIT_API_SECRET")
+
     # Memory/Storage
     long_term_memory_path: Path = Field(default=Path("data/long_term"), env="LONG_TERM_MEMORY_PATH")
     entity_store_path: Path = Field(default=Path("data/entity_store"), env="ENTITY_STORE_PATH")
@@ -128,7 +133,7 @@ class Settings(BaseSettings):
     min_content_length_chars: int = Field(default=300, env="MIN_CONTENT_LENGTH_CHARS")
 
     class Config:
-        env_file = ".env"
+        env_file = str(Path(__file__).resolve().parent.parent / ".env")
         env_file_encoding = "utf-8"
         case_sensitive = False
 
