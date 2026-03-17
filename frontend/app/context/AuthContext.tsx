@@ -32,7 +32,14 @@ export function useAuth() {
 }
 
 const TOKEN_KEY = "frontier_ai_radar_token";
-const USER_KEY = "frontier_ai_radar_user";
+const USER_KEY  = "frontier_ai_radar_user";
+
+/** Fire-and-forget prefetch — warms Redis for all slow API calls. */
+function triggerPrefetch(userId: number, token: string) {
+  fetch(`/api/prefetch?user_id=${userId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).catch(() => {/* best-effort — ignore errors */});
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -59,6 +66,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               localStorage.removeItem(USER_KEY);
               setToken(null);
               setUser(null);
+            } else {
+              // Valid session restored — warm the cache in the background
+              const restoredUser = JSON.parse(storedUser);
+              triggerPrefetch(restoredUser.id, storedToken);
             }
           })
           .catch(() => {
@@ -89,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(USER_KEY, JSON.stringify(newUser));
       setToken(newToken);
       setUser(newUser);
+      triggerPrefetch(newUser.id, newToken);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : "Network error" };
@@ -111,6 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(USER_KEY, JSON.stringify(newUser));
       setToken(newToken);
       setUser(newUser);
+      triggerPrefetch(newUser.id, newToken);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : "Network error" };

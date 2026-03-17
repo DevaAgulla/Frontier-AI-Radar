@@ -65,6 +65,14 @@ CENTIFIC_COMPETITORS = [
     # Especially relevant for RLHF, safety evaluations, and benchmark work
     ("Surge AI Blog",          "https://surgehq.ai/blog",                                                          "webpage", None),
     ("Prolific Resources",     "https://www.prolific.com/resources",                                               "webpage", None),
+
+    # ── GROUP 4: Newly added direct competitors (per March 2026 review) ─────
+    ("Turing Blog",                        "https://www.turing.com/blog",                                                       "webpage", "article"),
+    ("Deccan AI",                          "https://www.deccanai.com",                                                          "webpage", None),
+    ("Margot AI",                          "https://www.margot.ai",                                                             "webpage", None),
+    ("Cognizant AI Data Services",         "https://www.cognizant.com/us/en/services/artificial-intelligence/data-services",    "webpage", None),
+    ("Toloka Blog",                        "https://toloka.ai/blog/",                                                           "webpage", "article"),
+    ("Abaca AI",                           "https://www.abaca.ai",                                                              "webpage", None),
 ]
 
 

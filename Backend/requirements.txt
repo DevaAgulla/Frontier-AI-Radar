@@ -74,3 +74,6 @@ pdfplumber>=0.10.0
 
 # Azure Blob Storage — digest PDF + audio archival
 azure-storage-blob>=12.19.0
+
+livekit-agents[deepgram,elevenlabs]>=0.8.0
+livekit-api>=0.7.0

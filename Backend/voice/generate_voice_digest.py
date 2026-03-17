@@ -48,8 +48,9 @@ _cfg = _load_config_env(CONFIG_ENV)
 
 # ── ElevenLabs voice IDs ─────────────────────────────────────────────────────
 VOICE_PRESETS = {
-    "rachel": "21m00Tcm4TlvDq8ikWAM",   # calm, professional female
+    "rachel": "21m00Tcm4TlvDq8ikWAM",   # calm, professional female (default)
     "adam":   "pNInz6obpgDQGcFmaJgB",   # deep, authoritative male
+    "elli":   "MF3mGyEYCl7XYWbV9V6O",   # bright, energetic female
 }
 
 ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
@@ -166,6 +167,55 @@ def generate_audio(text: str, voice_id: str, api_key: str, audio_format: str) ->
     return resp.content
 
 
+# ── tts from pre-formatted script ─────────────────────────────────────────────
+
+def tts_from_script(
+    script_text: str,
+    voice_id: str,
+    api_key: str,
+    out_path: Path,
+    audio_format: str = "mp3_44100_128",
+    chunk_size: int = 4500,
+) -> Path:
+    """Convert a pre-formatted narration script directly to an MP3 file.
+
+    Unlike run(), this function SKIPS the PDF extraction and LLM formatting
+    steps — those are assumed to have already happened (post-pipeline agent).
+
+    Args:
+        script_text:  Clean narration text (already LLM-formatted).
+        voice_id:     ElevenLabs voice ID (from voice_presets table).
+        api_key:      ElevenLabs API key.
+        out_path:     Full path where the MP3 should be saved.
+        audio_format: ElevenLabs output format string.
+        chunk_size:   Max chars per TTS request.
+
+    Returns:
+        Path to the saved MP3 file.
+    """
+    if not script_text.strip():
+        raise ValueError("script_text is empty — nothing to synthesise.")
+
+    chunks = _chunk_text(script_text, chunk_size)
+    print(f"  TTS: {len(chunks)} chunk(s) from {len(script_text):,} chars with voice_id={voice_id[:8]}...")
+
+    audio_parts: list[bytes] = []
+    for i, chunk in enumerate(chunks, 1):
+        print(f"  Chunk {i}/{len(chunks)} ({len(chunk):,} chars)...")
+        part = generate_audio(chunk, voice_id, api_key, audio_format)
+        audio_parts.append(part)
+        print(f"    -> {len(part):,} bytes")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "wb") as f:
+        for part in audio_parts:
+            f.write(part)
+
+    size_kb = out_path.stat().st_size // 1024
+    print(f"  Saved: {out_path} ({size_kb} KB)")
+    return out_path
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def run(pdf_path: Path, voice_name: str, api_key: str,
@@ -187,6 +237,17 @@ def run(pdf_path: Path, voice_name: str, api_key: str,
 
     if not text.strip():
         raise ValueError("PDF produced no extractable text.")
+
+    # 1b. Reformat into audio-friendly narration via LLM middle layer.
+    #     This removes markdown, timestamps, run IDs, and tables, and rewrites
+    #     the content as flowing spoken prose capped at ~10 minutes.
+    try:
+        from agents.audiobook_formatter import format_for_audiobook
+        print("  Running audiobook formatter (LLM narration pass)...")
+        text = format_for_audiobook(text)
+        print(f"  Formatted narration: {len(text.split()):,} words")
+    except Exception as _fmt_err:
+        print(f"  [warn] audiobook_formatter failed ({_fmt_err}), using raw text")
 
     # 2. Chunk
     chunks = _chunk_text(text, chunk_size)

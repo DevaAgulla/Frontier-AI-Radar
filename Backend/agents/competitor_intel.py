@@ -64,6 +64,11 @@ RANKING GUIDANCE:
 - Documentation updates → LOW priority
 - Blog posts with no product changes → SKIP
 
+NO-NEWS RULE:
+If a competitor has NO news published in the last 24 hours, do NOT include them in output.
+Do NOT fabricate content, do NOT use articles older than 24 hours.
+Return an empty array [] if no competitor had activity today.
+
 OUTPUT FORMAT: Return ONLY a valid JSON array of Finding objects.
 Each Finding must have:
   id, title, source_url, publisher, date_detected, category, what_changed,

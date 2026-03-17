@@ -102,6 +102,8 @@ def create_chat_initial_state(
     chat_mode: str = "text",
     prior_messages: list | None = None,
     window_context: str | None = None,
+    persona_system_prompt: Optional[str] = None,
+    semantic_history: Optional[str] = None,
 ) -> RadarState:
     """Create a minimal RadarState for chat invocations through the unified graph.
 
@@ -113,6 +115,10 @@ def create_chat_initial_state(
     from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
     messages: list = []
+
+    # Persona system prompt — injected first so it frames all subsequent context
+    if persona_system_prompt:
+        messages.append(SystemMessage(content=persona_system_prompt))
 
     # Rolling summary of older conversation turns
     if window_context:
@@ -130,6 +136,12 @@ def create_chat_initial_state(
             "For greetings, personal questions, or general knowledge — just respond naturally."
         )
     ))
+
+    # Semantically relevant prior exchanges from other sessions
+    if semantic_history:
+        messages.append(SystemMessage(
+            content=f"=== Related prior exchanges ===\n{semantic_history}"
+        ))
 
     # Last N raw turns as proper conversational context
     for m in (prior_messages or []):

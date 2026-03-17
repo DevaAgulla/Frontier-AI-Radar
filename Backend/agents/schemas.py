@@ -62,7 +62,7 @@ class FindingOutput(BaseModel):
         description="True when a SOTA or benchmark claim requires independent verification",
     )
     tags: List[str] = Field(default_factory=list)
-    markdown_summary: str = Field(description="Markdown-formatted summary for PDF rendering")
+    markdown_summary: str = Field(description="Plain-text summary for rendering — no markdown symbols, no asterisks, no hashes")
     agent_source: str = Field(
         description="Which agent produced this — e.g. research_intel, competitor_intel"
     )
@@ -164,16 +164,16 @@ class DeduplicationOutput(BaseModel):
 class DigestSectionsOutput(BaseModel):
     """Topic-level deep-dive sections in the digest."""
 
-    research: str = Field(default="", description="Deep-dive for research/paper findings")
-    models: str = Field(default="", description="Deep-dive for model provider findings")
-    benchmarks: str = Field(default="", description="Deep-dive for benchmark/leaderboard findings")
-    competitors: str = Field(default="", description="Deep-dive for competitor findings")
+    research: str = Field(default="", description="HTML paragraphs deep-dive for research/paper findings — NO markdown")
+    models: str = Field(default="", description="HTML paragraphs deep-dive for model provider findings — NO markdown")
+    benchmarks: str = Field(default="", description="HTML paragraphs deep-dive for benchmark/leaderboard findings — NO markdown")
+    competitors: str = Field(default="", description="HTML paragraphs deep-dive for competitor findings — NO markdown")
 
 
 class DigestOutput(BaseModel):
     """Output schema for Digest Compiler Agent (Layer 6)."""
 
-    executive_summary: str = Field(description="Markdown executive summary with top 7 items")
+    executive_summary: str = Field(description="Clean HTML paragraphs executive summary with top 7 items — NO markdown")
     sections: DigestSectionsOutput = Field(default_factory=DigestSectionsOutput)
     top_findings: List[Dict[str, Any]] = Field(
         default_factory=list,

@@ -35,7 +35,12 @@
       "Bash(ls /c/Users/RathlavathRameshnaya/Videos/InternalHackathon/frontend/app/digest/[run_id]/voice)",
       "Bash(ls /c/Users/RathlavathRameshnaya/Videos/InternalHackathon/frontend/app/digest/[run_id]/chat)",
       "Bash(grep -n \"interrupted\\\\|barge\\\\|aiSpeaking\\\\|continuous\\\\|auto.restart\\\\|bargeIn\" /c/Users/RathlavathRameshnaya/Videos/InternalHackathon/frontend/app/digest/[run_id]/voice/page.tsx)",
-      "Bash(grep -r \"chat_sessions\\\\|chat_messages\" c:UsersRathlavathRameshnayaVideosInternalHackathonBackend --include=*.py --include=*.sql)"
+      "Bash(grep -r \"chat_sessions\\\\|chat_messages\" c:UsersRathlavathRameshnayaVideosInternalHackathonBackend --include=*.py --include=*.sql)",
+      "Bash(find c:UsersRathlavathRameshnayaVideosInternalHackathonBackend -iname *audio* -o -iname *tts*)",
+      "WebFetch(domain:research.nvidia.com)",
+      "WebFetch(domain:livekit.io)",
+      "WebFetch(domain:docs.livekit.io)",
+      "WebFetch(domain:livekit.com)"
     ]
   }
 }

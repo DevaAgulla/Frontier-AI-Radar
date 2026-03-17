@@ -1197,8 +1197,18 @@ async def diff_leaderboard_snapshots(
         "sota_changes": List[Dict]
     }
     """
-    today_models = {m.get("model_id"): m for m in today.get("models", [])}
-    yesterday_models = {m.get("model_id"): m for m in yesterday.get("models", [])}
+    def _normalize(entries: list) -> dict:
+        """Coerce each entry to a dict. Handles plain strings (LLM hallucination guard)."""
+        result = {}
+        for i, m in enumerate(entries):
+            if isinstance(m, str):
+                m = {"model_id": m, "rank": i + 1, "scores": {}}
+            mid = m.get("model_id") or m.get("model") or f"model_{i}"
+            result[mid] = m
+        return result
+
+    today_models    = _normalize(today.get("models", []))
+    yesterday_models = _normalize(yesterday.get("models", []))
 
     new_models = [mid for mid in today_models if mid not in yesterday_models]
 

@@ -184,3 +184,79 @@ def invalidate_digest_cache(run_id: int) -> None:
     """Remove stale cache entries (call before re-running a digest)."""
     rdelete(f"digest:run:{run_id}")
     rdelete("digest:latest")
+
+
+# ── Login-time prefetch cache ──────────────────────────────────────────────────
+# Warmed once at login; individual endpoints read from here before hitting DB.
+# Short TTLs so stale data self-heals without requiring explicit invalidation.
+
+TTL_PREFETCH_RUNS      = 15 * 60   # 15 min — refresh on next login or new digest
+TTL_PREFETCH_DASHBOARD = 15 * 60   # 15 min
+TTL_PREFETCH_PRESETS   = 60 * 60   # 1 h  — presets rarely change mid-session
+
+
+def get_prefetch_runs() -> Optional[list]:
+    return rget("prefetch:runs")
+
+
+def set_prefetch_runs(data: list) -> None:
+    rset("prefetch:runs", data, TTL_PREFETCH_RUNS)
+
+
+def get_prefetch_dashboard() -> Optional[dict]:
+    return rget("prefetch:dashboard")
+
+
+def set_prefetch_dashboard(data: dict) -> None:
+    rset("prefetch:dashboard", data, TTL_PREFETCH_DASHBOARD)
+
+
+def get_prefetch_presets(run_id: int) -> Optional[dict]:
+    return rget(f"prefetch:run:{run_id}:presets")
+
+
+def set_prefetch_presets(run_id: int, data: dict) -> None:
+    rset(f"prefetch:run:{run_id}:presets", data, TTL_PREFETCH_PRESETS)
+
+
+def invalidate_prefetch_runs() -> None:
+    """Call when a new run completes so the next request sees fresh data."""
+    rdelete("prefetch:runs")
+    rdelete("prefetch:dashboard")
+
+
+def invalidate_prefetch_presets(run_id: int) -> None:
+    """Call after audio is generated so the presets list refreshes."""
+    rdelete(f"prefetch:run:{run_id}:presets")
+
+
+# ── Chat session metadata cache ────────────────────────────────────────────────
+# Caches the session_id for a (user_id, run_id, persona_id) triple so the
+# endpoint never needs to SELECT from chat_sessions on repeat visits.
+
+TTL_SESSION_META = 7 * 24 * 3600  # 7 d — session IDs are stable once created
+
+
+def get_session_meta(user_id: int, run_id: int, persona_id: str) -> Optional[dict]:
+    return rget(f"session:meta:{user_id}:{run_id}:{persona_id}")
+
+
+def set_session_meta(user_id: int, run_id: int, persona_id: str, data: dict) -> None:
+    rset(f"session:meta:{user_id}:{run_id}:{persona_id}", data, TTL_SESSION_META)
+
+
+# ── Popular questions cache (per run) ─────────────────────────────────────────
+
+TTL_POPULAR = 60 * 60  # 1 h — popular questions change slowly
+
+
+def get_popular_questions_cached(run_id: int) -> Optional[list]:
+    return rget(f"prefetch:run:{run_id}:popular")
+
+
+def set_popular_questions_cached(run_id: int, data: list) -> None:
+    rset(f"prefetch:run:{run_id}:popular", data, TTL_POPULAR)
+
+
+def invalidate_popular_questions(run_id: int) -> None:
+    rdelete(f"prefetch:run:{run_id}:popular")

@@ -13,6 +13,7 @@ interface DigestCard {
   pdf_url: string | null;
   audio_url?: string;
   created_at: string;
+  period?: "daily" | "weekly" | "monthly";
 }
 
 function formatDate(dateStr: string): string {
@@ -128,7 +129,7 @@ function TalkingAvatar({ amplitude, playing }: { amplitude: number; playing: boo
   const glowOpacity = playing ? 0.15 + amplitude * 0.35 : 0;
 
   return (
-    <svg viewBox="0 0 160 160" width="180" height="180" style={{ filter: playing ? `drop-shadow(0 0 ${8 + amplitude * 12}px rgba(139,92,246,${0.4 + amplitude * 0.4}))` : "none", transition: "filter 0.05s" }}>
+    <svg viewBox="0 0 160 160" width="90" height="90" style={{ filter: playing ? `drop-shadow(0 0 ${6 + amplitude * 10}px rgba(139,92,246,${0.4 + amplitude * 0.4}))` : "none", transition: "filter 0.05s", flexShrink: 0 }}>
       <defs>
         <radialGradient id="faceGrad" cx="45%" cy="38%" r="60%">
           <stop offset="0%" stopColor="#c4b5fd" />
@@ -188,36 +189,71 @@ function TalkingAvatar({ amplitude, playing }: { amplitude: number; playing: boo
   );
 }
 
+// ── Preset type (from DB) ─────────────────────────────────────────────────────
+interface VoicePresetInfo {
+  id: string;
+  label: string;
+  gender: string;
+  style: string;
+  is_ready: boolean;
+  audio_url: string | null;
+}
+
 // ── Audio Book Modal ──────────────────────────────────────────────────────────
 function AudioModal({ runId, date, onClose }: { runId: string; date: string; onClose: () => void }) {
   const [playing, setPlaying] = useState(false);
   const [amplitude, setAmplitude] = useState(0);
+  const [presets, setPresets] = useState<VoicePresetInfo[]>([]);
+  const [presetsLoading, setPresetsLoading] = useState(true);
+  const [scriptReady, setScriptReady] = useState(false);
+  const [activePreset, setActivePreset] = useState<VoicePresetInfo | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animRef = useRef<number>(0);
   const dataArrayRef = useRef<Uint8Array | null>(null);
 
-  const setupAnalyser = useCallback(() => {
-    if (!audioRef.current || audioCtxRef.current) return;
+  const setupAnalyser = useCallback((forElement: HTMLAudioElement) => {
+    // Close any stale context first
+    if (audioCtxRef.current) {
+      try { audioCtxRef.current.close(); } catch { /* ignore */ }
+      audioCtxRef.current = null;
+      analyserRef.current = null;
+      dataArrayRef.current = null;
+    }
     try {
+      // Use captureStream() instead of createMediaElementSource().
+      // createMediaElementSource() permanently hijacks the element's speaker output
+      // and requires a running AudioContext to produce any sound — causing silent playback
+      // if the context is suspended even briefly.
+      // captureStream() gives us a MediaStream for the analyser WITHOUT routing audio
+      // through the Web Audio graph, so the element always plays through the speakers.
+      const stream: MediaStream | null =
+        (forElement as any).captureStream?.() ??
+        (forElement as any).mozCaptureStream?.() ??
+        null;
+      if (!stream) return; // browser doesn't support captureStream — animation just won't run
+
       const ctx = new AudioContext();
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
       analyser.smoothingTimeConstant = 0.75;
-      const source = ctx.createMediaElementSource(audioRef.current);
+      const source = ctx.createMediaStreamSource(stream);
       source.connect(analyser);
-      analyser.connect(ctx.destination);
+      // Do NOT connect analyser to ctx.destination — audio goes through speaker independently
       audioCtxRef.current = ctx;
       analyserRef.current = analyser;
       dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount);
-    } catch { /* ignore — AudioContext may already exist */ }
+      ctx.resume().catch(() => {}); // resume for animation clock — not needed for audio
+    } catch { /* ignore — captureStream not available or permission denied */ }
   }, []);
 
   const startAnimation = useCallback(() => {
     const tick = () => {
       if (!analyserRef.current || !dataArrayRef.current) { setAmplitude(0); return; }
-      analyserRef.current.getByteFrequencyData(dataArrayRef.current);
+      analyserRef.current.getByteFrequencyData(dataArrayRef.current as Uint8Array<ArrayBuffer>);
       // Speech sits in ~100-3000 Hz. For 512 FFT at 44100 Hz, those are roughly bins 1-35
       const speechBins = Array.from(dataArrayRef.current.slice(1, 35));
       const avg = speechBins.reduce((a, b) => a + b, 0) / speechBins.length;
@@ -245,18 +281,91 @@ function AudioModal({ runId, date, onClose }: { runId: string; date: string; onC
   const handlePause = () => { stopAnimation(); setPlaying(false); };
   const handleEnded = () => { stopAnimation(); setPlaying(false); };
 
-  const toggle = async () => {
-    if (!audioRef.current) return;
+  const toggle = () => {
+    if (!audioRef.current || !activePreset?.audio_url) return;
     if (playing) {
       audioRef.current.pause();
     } else {
-      // Set up analyser + resume AudioContext inside the user-gesture handler
-      // so the browser doesn't block the AudioContext (autoplay policy)
-      setupAnalyser();
-      if (audioCtxRef.current) {
-        await audioCtxRef.current.resume();
+      // Set up analyser via captureStream (for avatar animation only — does NOT affect audio output)
+      setupAnalyser(audioRef.current);
+      // Audio plays directly through the browser's speaker pipeline — no AudioContext in the path
+      audioRef.current.play().catch((err) => {
+        console.warn("[AudioModal] play() failed:", err);
+      });
+    }
+  };
+
+  // Load presets from backend on mount
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setPresetsLoading(true);
+      try {
+        const res = await fetch(`/api/audio/presets?run_id=${runId}`);
+        if (!res.ok) throw new Error("Failed to load presets");
+        const data = await res.json();
+        if (cancelled) return;
+        const list: VoicePresetInfo[] = data.presets ?? [];
+        setPresets(list);
+        setScriptReady(data.script_ready ?? false);
+        // Restore last-used preset from localStorage, or pick first ready one
+        const savedId = globalThis.localStorage?.getItem("frontier_voice_preset") ?? "";
+        const saved = list.find(p => p.id === savedId && p.is_ready);
+        const firstReady = list.find(p => p.is_ready);
+        setActivePreset(saved ?? firstReady ?? null);
+      } catch {
+        // Leave presets empty — UI will show error state
+      } finally {
+        if (!cancelled) setPresetsLoading(false);
       }
-      await audioRef.current.play().catch(() => {});
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [runId]);
+
+  // Switch preset — only loads player, never triggers generation
+  const selectPreset = (preset: VoicePresetInfo) => {
+    if (generating) return;
+    setGenError("");
+    if (audioRef.current) audioRef.current.pause();
+    stopAnimation();
+    setPlaying(false);
+    setActivePreset(preset);
+    try { globalThis.localStorage?.setItem("frontier_voice_preset", preset.id); } catch {}
+  };
+
+  // Explicit generate — only called when user clicks "Generate" button
+  const generatePreset = async () => {
+    if (!activePreset || generating) return;
+    setGenError("");
+    if (audioRef.current) audioRef.current.pause();
+    stopAnimation();
+    setPlaying(false);
+    setGenerating(true);
+    try {
+      const res = await fetch(
+        `/api/audio/presets?run_id=${runId}&preset_id=${activePreset.id}`,
+        { method: "POST" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Generation failed");
+
+      // Refresh preset list so is_ready flips to true
+      const refreshRes = await fetch(`/api/audio/presets?run_id=${runId}`);
+      if (refreshRes.ok) {
+        const refreshData = await refreshRes.json();
+        const updated: VoicePresetInfo[] = refreshData.presets ?? [];
+        setPresets(updated);
+        const updatedPreset = updated.find(p => p.id === activePreset.id);
+        if (updatedPreset) {
+          setActivePreset(updatedPreset);
+          try { globalThis.localStorage?.setItem("frontier_voice_preset", updatedPreset.id); } catch {}
+        }
+      }
+    } catch (e: any) {
+      setGenError(e.message ?? "Failed to generate audio");
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -264,69 +373,149 @@ function AudioModal({ runId, date, onClose }: { runId: string; date: string; onC
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-md bg-[var(--bg-card)] rounded-3xl shadow-2xl border border-[var(--border)] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-md bg-[var(--bg-card)] rounded-3xl shadow-2xl border border-[var(--border)] overflow-hidden max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
 
-        {/* Gradient header with avatar */}
-        <div className="relative bg-gradient-to-br from-indigo-900 via-purple-800 to-violet-900 px-6 pt-6 pb-8">
-          <button onClick={onClose} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/70 hover:bg-white/20 transition-colors">
+        {/* Gradient header — avatar centered, moderate size */}
+        <div className="relative bg-gradient-to-br from-indigo-900 via-purple-800 to-violet-900 px-6 pt-5 pb-6 shrink-0">
+          <button onClick={onClose} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/70 hover:bg-white/20 transition-colors z-10">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
 
           <div className="flex flex-col items-center">
-            {/* Talking Avatar */}
             <TalkingAvatar amplitude={amplitude} playing={playing} />
-
             <p className="text-white font-bold text-lg mt-2">AI News Presenter</p>
             <p className="text-white/60 text-sm">{shortDate(date)}</p>
             <div className="flex items-center gap-1.5 mt-2 px-3 py-1 rounded-full bg-white/10">
-              <div className={`w-1.5 h-1.5 rounded-full ${playing ? "bg-green-400 animate-pulse" : "bg-white/40"}`} />
-              <span className="text-white/70 text-xs font-medium">{playing ? "Speaking…" : "ElevenLabs · Rachel"}</span>
+              <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${generating ? "bg-yellow-400 animate-pulse" : playing ? "bg-green-400 animate-pulse" : "bg-white/40"}`} />
+              <span className="text-white/70 text-xs font-medium">
+                {generating ? "Generating audio…" : playing ? "Speaking…"
+                  : activePreset?.is_ready ? `ElevenLabs · ${activePreset.label}`
+                  : activePreset ? `${activePreset.label} · Not generated`
+                  : "Select a voice preset"}
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Controls */}
-        <div className="px-6 pb-6 pt-5 bg-[var(--bg-card)]">
-          {/* Waveform bars — animate when playing */}
-          <div className="flex items-center justify-center gap-0.5 h-10 mb-4">
-            {heights.map((h, i) => (
-              <div key={i} className="w-1 rounded-full"
-                style={{
-                  height: playing ? `${4 + amplitude * h * 0.9}px` : `${h * 0.3}px`,
-                  background: playing ? "var(--primary)" : "var(--border)",
-                  opacity: playing ? 0.7 + amplitude * 0.3 : 0.4,
-                  transition: "height 0.05s ease-out, background 0.2s",
-                }} />
-            ))}
+        {/* Controls — scrollable */}
+        <div className="px-5 pb-5 pt-4 bg-[var(--bg-card)] overflow-y-auto flex-1">
+          {/* Voice preset dropdown */}
+          <div className="mb-4">
+            <p className="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wider mb-2">
+              Voice Preset
+              {!scriptReady && !presetsLoading && (
+                <span className="ml-2 normal-case text-yellow-500">· Script not ready yet</span>
+              )}
+            </p>
+            {presetsLoading ? (
+              <div className="flex items-center gap-2 py-2">
+                <svg className="animate-spin" width="13" height="13" fill="none" stroke="var(--primary)" strokeWidth="2" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/>
+                </svg>
+                <span className="text-xs text-[var(--text-muted)]">Loading…</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                {/* Dropdown */}
+                <select
+                  value={activePreset?.id ?? ""}
+                  onChange={(e) => {
+                    const p = presets.find(x => x.id === e.target.value);
+                    if (p) selectPreset(p);
+                  }}
+                  disabled={generating}
+                  className="flex-1 px-3 py-2 rounded-lg text-xs border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--primary)] disabled:opacity-50 cursor-pointer"
+                >
+                  {presets.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.label}{v.is_ready ? " ✓" : ""}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Generate button — only shown when selected preset is not ready */}
+                {activePreset && !activePreset.is_ready && (
+                  <button
+                    onClick={generatePreset}
+                    disabled={generating || !scriptReady}
+                    className="shrink-0 px-3 py-2 rounded-lg text-xs font-semibold bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={!scriptReady ? "Audio script not ready yet" : "Generate audio for this voice"}
+                  >
+                    {generating ? "Generating…" : "Generate"}
+                  </button>
+                )}
+
+                {/* Ready badge — shown when selected preset is ready */}
+                {activePreset?.is_ready && (
+                  <span className="shrink-0 text-[10px] font-semibold px-2 py-1 rounded-full bg-green-500/10 text-green-500 border border-green-500/20">
+                    Ready
+                  </span>
+                )}
+              </div>
+            )}
+            {genError && <p className="text-[10px] text-red-400 mt-1.5">{genError}</p>}
           </div>
 
+          {/* Waveform / spinner */}
+          {generating ? (
+            <div className="flex items-center justify-center h-8 mb-3">
+              <svg className="animate-spin" width="18" height="18" fill="none" stroke="var(--primary)" strokeWidth="2" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/>
+              </svg>
+              <span className="ml-2 text-xs text-[var(--text-muted)]">Generating voice…</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center gap-0.5 h-8 mb-3">
+              {heights.map((h, i) => (
+                <div key={i} className="w-1 rounded-full"
+                  style={{
+                    height: playing ? `${4 + amplitude * h * 0.9}px` : `${h * 0.28}px`,
+                    background: playing ? "var(--primary)" : "var(--border)",
+                    opacity: playing ? 0.7 + amplitude * 0.3 : 0.4,
+                    transition: "height 0.05s ease-out, background 0.2s",
+                  }} />
+              ))}
+            </div>
+          )}
+
           {/* Play/Pause */}
-          <div className="flex justify-center mb-4">
-            <button onClick={toggle}
-              className="w-14 h-14 rounded-full bg-[var(--primary)] hover:bg-[var(--primary-hover)] flex items-center justify-center text-white shadow-lg shadow-[var(--primary)]/30 transition-all active:scale-95">
+          <div className="flex justify-center mb-3">
+            <button onClick={toggle} disabled={generating || !activePreset?.audio_url}
+              className="w-12 h-12 rounded-full bg-[var(--primary)] hover:bg-[var(--primary-hover)] flex items-center justify-center text-white shadow-lg shadow-[var(--primary)]/30 transition-all active:scale-95 disabled:opacity-50">
               {playing ? (
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" />
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>
                 </svg>
               ) : (
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: "3px" }}>
-                  <polygon points="5 3 19 12 5 21 5 3" />
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: "2px" }}>
+                  <polygon points="5 3 19 12 5 21 5 3"/>
                 </svg>
               )}
             </button>
           </div>
 
-          {/* Native audio (full controls for scrubbing) */}
-          <audio key={runId} ref={audioRef} src={`/api/audio/${runId}`}
-            onPlay={handlePlay} onPause={handlePause} onEnded={handleEnded}
-            className="w-full rounded-lg" controls />
+          {/* Native audio scrubber */}
+          {activePreset?.audio_url ? (
+            <audio key={`${runId}-${activePreset.id}`} ref={audioRef}
+              src={`${activePreset.audio_url}${activePreset.audio_url.includes("?") ? "&" : "?"}bust=${activePreset.id}`}
+              onPlay={handlePlay} onPause={handlePause} onEnded={handleEnded}
+              className="w-full rounded-lg" controls />
+          ) : (
+            !generating && (
+              <p className="text-center text-xs text-[var(--text-muted)] py-2">
+                {activePreset && !activePreset.is_ready
+                  ? "Click Generate to create audio for this voice"
+                  : "Select a voice preset above"}
+              </p>
+            )
+          )}
 
-          <p className="text-center text-xs text-[var(--text-muted)] mt-3">
+          <p className="text-center text-[10px] text-[var(--text-muted)] mt-2">
             Want deeper insights?{" "}
             <Link href={`/digest/${runId}/chat`} className="text-[var(--primary)] hover:underline font-medium">
-              Interact with AI →
+              Interact →
             </Link>
           </p>
         </div>
@@ -344,43 +533,21 @@ const AGENT_OPTIONS = [
 ] as const;
 
 // ── New Brief Modal ───────────────────────────────────────────────────────────
-function NewBriefModal({ user, onClose, onComplete }: {
+function NewBriefModal({ user, onClose, onTriggered }: {
   user: { id: number; name: string } | null;
   onClose: () => void;
-  onComplete: () => void;
+  onTriggered: (runId: string | null, period: "daily" | "weekly" | "monthly") => void;
 }) {
   const [selected, setSelected] = useState<string[]>(["research", "competitor", "model", "benchmark"]);
-  const [state, setState] = useState<"idle" | "triggering" | "running" | "done" | "error">("idle");
+  const [period, setPeriod] = useState<"daily" | "weekly" | "monthly">("daily");
+  const [state, setState] = useState<"idle" | "triggering" | "triggered" | "error">("idle");
   const [error, setError] = useState("");
-  const [runId, setRunId] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const PERIOD_DAYS = { daily: 1, weekly: 7, monthly: 30 };
 
   const allSelected = selected.length === AGENT_OPTIONS.length;
   const toggle = (id: string) =>
     setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
-
-  const startPolling = (rid: string) => {
-    setRunId(rid);
-    pollRef.current = setInterval(async () => {
-      try {
-        const token = globalThis.localStorage?.getItem("frontier_ai_radar_token");
-        const res = await fetch(`/api/runs/${rid}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-        if (!res.ok) return;
-        const data = await res.json();
-        const run = data.data ?? data;
-        const s = (run.status ?? "").toLowerCase();
-        if (s === "success" || s === "completed") {
-          clearInterval(pollRef.current!);
-          setState("done");
-          setTimeout(() => { onClose(); onComplete(); }, 2500);
-        } else if (s === "failure" || s === "failed") {
-          clearInterval(pollRef.current!);
-          setState("error");
-          setError("Pipeline failed — check the Runs page for details.");
-        }
-      } catch { }
-    }, 8000);
-  };
 
   const handleBuild = async () => {
     if (selected.length === 0) { setError("Select at least one agent."); return; }
@@ -390,33 +557,22 @@ function NewBriefModal({ user, onClose, onComplete }: {
       const res = await fetch("/api/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ agent_ids: selected, user_id: user?.id, async_run: true, since_days: 1, url_mode: "default", urls: [] }),
+        body: JSON.stringify({ agent_ids: selected, user_id: user?.id, async_run: true, since_days: PERIOD_DAYS[period], period, url_mode: "default", urls: [] }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to start run");
       const run = data.data ?? data;
-      setState("running");
       const rid = run.id ? String(run.id) : null;
-      if (rid && !rid.startsWith("pending-")) {
-        startPolling(rid);
-      } else {
-        // Poll until we find the running run
-        pollRef.current = setInterval(async () => {
-          try {
-            const r = await fetch("/api/runs?status=running", { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-            if (!r.ok) return;
-            const d = await r.json();
-            const rows = d.data ?? [];
-            if (rows.length > 0) { clearInterval(pollRef.current!); startPolling(String(rows[0].id)); }
-          } catch { }
-        }, 5000);
-      }
+      setState("triggered");
+      // Close modal after brief confirmation; hand off run tracking to parent
+      setTimeout(() => {
+        onTriggered(rid && !rid.startsWith("pending-") ? rid : null, period);
+        onClose();
+      }, 1500);
     } catch (e: any) { setState("error"); setError(e.message || "Something went wrong"); }
   };
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
-
-  const isRunning = state === "triggering" || state === "running";
+  const isTriggering = state === "triggering";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
@@ -441,29 +597,48 @@ function NewBriefModal({ user, onClose, onComplete }: {
 
         {/* Body */}
         <div className="px-5 py-4">
-          {state === "done" ? (
+          {state === "triggered" ? (
             <div className="flex flex-col items-center gap-3 py-6">
               <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>
               </div>
-              <p className="font-semibold text-[var(--text-primary)]">Brief is ready!</p>
-              <p className="text-xs text-[var(--text-muted)]">Refreshing your briefings list…</p>
+              <p className="font-semibold text-[var(--text-primary)]">Run triggered!</p>
+              <p className="text-xs text-[var(--text-muted)] text-center max-w-[220px]">Agents are working in the background. You'll see a progress indicator while it runs.</p>
             </div>
-          ) : isRunning ? (
+          ) : isTriggering ? (
             <div className="flex flex-col items-center gap-3 py-6">
               <div className="w-12 h-12 rounded-full bg-[var(--primary-light)] flex items-center justify-center">
                 <svg className="animate-spin" width="24" height="24" fill="none" stroke="var(--primary)" strokeWidth="2" viewBox="0 0 24 24">
                   <circle cx="12" cy="12" r="10" strokeOpacity="0.25" /><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
                 </svg>
               </div>
-              <p className="font-semibold text-[var(--text-primary)]">
-                {state === "triggering" ? "Starting pipeline…" : "Agents running…"}
-              </p>
-              {runId && <p className="text-xs text-[var(--text-muted)]">Run #{runId} · auto-refreshes when done</p>}
-              <p className="text-[10px] text-[var(--text-muted)] text-center max-w-[220px]">This usually takes 3–8 minutes. You can close this and check back later.</p>
+              <p className="font-semibold text-[var(--text-primary)]">Starting pipeline…</p>
             </div>
           ) : (
             <>
+              {/* Period selector */}
+              <div className="mb-4">
+                <p className="text-xs font-medium text-[var(--text-secondary)] mb-2">Brief period</p>
+                <div className="flex gap-1.5">
+                  {(["daily", "weekly", "monthly"] as const).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => setPeriod(p)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-all capitalize ${
+                        period === p
+                          ? "bg-[var(--primary)] border-[var(--primary)] text-white"
+                          : "border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--primary)]/50"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                  {period === "daily" ? "Last 24 hours" : period === "weekly" ? "Last 7 days" : "Last 30 days"}
+                </p>
+              </div>
+
               {/* Select All */}
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-medium text-[var(--text-secondary)]">Select agents to run</p>
@@ -506,7 +681,7 @@ function NewBriefModal({ user, onClose, onComplete }: {
         </div>
 
         {/* Footer */}
-        {!isRunning && state !== "done" && (
+        {(state === "idle" || state === "error") && (
           <div className="px-5 pb-5 flex gap-2">
             <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border)] text-sm text-[var(--text-secondary)] hover:bg-[var(--border)] transition-colors">
               Cancel
@@ -818,10 +993,15 @@ export default function DigestPage() {
   const [digests, setDigests] = useState<DigestCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activePeriod, setActivePeriod] = useState<"daily" | "weekly" | "monthly">("daily");
   const [audioModal, setAudioModal] = useState<{ runId: string; date: string } | null>(null);
   const [pdfModal, setPdfModal] = useState<{ url: string; date: string } | null>(null);
   const [newBriefOpen, setNewBriefOpen] = useState(false);
   const [runStatusId, setRunStatusId] = useState<string | null>(null);
+  // Background pipeline tracking
+  const [bgRunId, setBgRunId] = useState<string | null>(null);
+  const [bgRunning, setBgRunning] = useState(false);
+  const bgPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadDigests = useCallback(() => {
     const token = globalThis.localStorage?.getItem("frontier_ai_radar_token");
@@ -838,7 +1018,57 @@ export default function DigestPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const startBgPoll = useCallback((rid: string | null) => {
+    setBgRunId(rid);
+    setBgRunning(true);
+    loadDigests(); // show the in-progress card immediately
+    if (bgPollRef.current) clearInterval(bgPollRef.current);
+    bgPollRef.current = setInterval(async () => {
+      try {
+        const token = globalThis.localStorage?.getItem("frontier_ai_radar_token");
+        const hdrs: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+        let status = "";
+        if (rid) {
+          const res = await fetch(`/api/runs/${rid}`, { headers: hdrs });
+          if (res.ok) {
+            const d = await res.json();
+            status = ((d.data ?? d).status ?? "").toLowerCase();
+          }
+        } else {
+          // No run ID yet — look for any running run
+          const res = await fetch("/api/runs?status=running", { headers: hdrs });
+          if (res.ok) {
+            const d = await res.json();
+            const rows = d.data ?? [];
+            if (rows.length > 0) {
+              const found = String(rows[0].id);
+              setBgRunId(found);
+              rid = found;
+            }
+          }
+        }
+        if (status === "success" || status === "completed") {
+          clearInterval(bgPollRef.current!);
+          setBgRunning(false);
+          loadDigests();
+        } else if (status === "failure" || status === "failed") {
+          clearInterval(bgPollRef.current!);
+          setBgRunning(false);
+        }
+      } catch { }
+    }, 8000);
+  }, [loadDigests]);
+
+  useEffect(() => () => { if (bgPollRef.current) clearInterval(bgPollRef.current); }, []);
+
   useEffect(() => { loadDigests(); }, [loadDigests]);
+
+  // Filter by period — treat missing period field as "daily"
+  const filteredDigests = digests.filter(d =>
+    activePeriod === "daily"
+      ? (!d.period || d.period === "daily")
+      : d.period === activePeriod
+  );
 
   const selected = digests.find((d) => d.id === selectedId) ?? null;
 
@@ -853,7 +1083,7 @@ export default function DigestPage() {
     <div className="flex h-screen bg-[var(--bg)] overflow-hidden">
       {audioModal && <AudioModal runId={audioModal.runId} date={audioModal.date} onClose={() => setAudioModal(null)} />}
       {pdfModal && <PdfViewerModal pdfUrl={pdfModal.url} date={pdfModal.date} onClose={() => setPdfModal(null)} />}
-      {newBriefOpen && <NewBriefModal user={user} onClose={() => setNewBriefOpen(false)} onComplete={() => { setNewBriefOpen(false); loadDigests(); }} />}
+      {newBriefOpen && <NewBriefModal user={user} onClose={() => setNewBriefOpen(false)} onTriggered={(rid, period) => { setActivePeriod(period); startBgPoll(rid); }} />}
       {runStatusId && <RunStatusModal runId={runStatusId} onClose={() => setRunStatusId(null)} />}
 
       {/* ── Left sidebar: digest list ── */}
@@ -863,7 +1093,7 @@ export default function DigestPage() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-bold text-[var(--text-primary)] text-sm">Intelligence Briefs</h2>
-              <p className="text-xs text-[var(--text-muted)] mt-0.5">{digests.length} briefings</p>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">{filteredDigests.length} {activePeriod} briefings</p>
             </div>
             <button
               onClick={() => setNewBriefOpen(true)}
@@ -877,20 +1107,67 @@ export default function DigestPage() {
           </div>
         </div>
 
+        {/* Background pipeline progress pill */}
+        {bgRunning && (
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border)] bg-blue-500/5">
+            <svg className="animate-spin shrink-0" width="12" height="12" fill="none" stroke="#60a5fa" strokeWidth="2" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" strokeOpacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/>
+            </svg>
+            <span className="text-[11px] text-blue-400 flex-1 truncate">
+              Pipeline running{bgRunId ? ` · Run #${bgRunId}` : ""}…
+            </span>
+            {bgRunId && (
+              <button
+                onClick={() => setRunStatusId(bgRunId)}
+                className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold shrink-0"
+              >
+                View
+              </button>
+            )}
+            <button
+              onClick={() => { if (bgPollRef.current) clearInterval(bgPollRef.current); setBgRunning(false); }}
+              className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] shrink-0"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Period tabs */}
+        <div className="flex border-b border-[var(--border)]">
+          {(["daily", "weekly", "monthly"] as const).map(p => (
+            <button
+              key={p}
+              onClick={() => { setActivePeriod(p); setSelectedId(null); }}
+              className={`flex-1 py-2 text-[11px] font-semibold capitalize transition-colors ${
+                activePeriod === p
+                  ? "text-[var(--primary)] border-b-2 border-[var(--primary)] -mb-px bg-[var(--primary-light)]/40"
+                  : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+              }`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+
         {/* List */}
         <div className="flex-1 overflow-y-auto py-2">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="w-6 h-6 rounded-full bg-[var(--primary)] animate-pulse" />
             </div>
-          ) : digests.length === 0 ? (
+          ) : filteredDigests.length === 0 ? (
             <div className="px-4 py-10 text-center">
               <div className="text-3xl mb-3">📡</div>
-              <p className="text-sm font-medium text-[var(--text-primary)]">No briefs yet</p>
-              <p className="text-xs text-[var(--text-muted)] mt-1">Click "New Brief" to run the pipeline</p>
+              <p className="text-sm font-medium text-[var(--text-primary)]">No {activePeriod} briefs yet</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1">
+                {activePeriod === "daily" ? 'Click "New Brief" to generate one' : `Select "${activePeriod}" in the New Brief modal`}
+              </p>
             </div>
           ) : (
-            digests.map((d, i) => {
+            filteredDigests.map((d, i) => {
               const isSelected = d.id === selectedId;
               return (
                 <div
@@ -905,7 +1182,7 @@ export default function DigestPage() {
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className={`text-xs font-bold ${isSelected ? "text-[var(--primary)]" : "text-[var(--text-muted)]"}`}>
-                        {i === 0 ? "LATEST" : `BRIEF #${digests.length - i}`}
+                        {i === 0 ? "LATEST" : `BRIEF #${filteredDigests.length - i}`}
                       </span>
                       <span className="text-[10px] text-[var(--text-muted)]">{timeAgo(d.created_at)}</span>
                     </div>

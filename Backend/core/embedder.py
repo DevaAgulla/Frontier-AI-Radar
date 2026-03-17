@@ -6,7 +6,7 @@ import structlog
 logger = structlog.get_logger()
 
 # ── Lazy singleton cache ────────────────────────────────────────────────────
-_model_cache: dict[str, SentenceTransformer] = {}
+_model_cache: dict = {}  # {model_name: SentenceTransformer} — lazy import avoids torch at startup
 
 
 def get_embedding_model(model_name: str = "all-MiniLM-L6-v2"):

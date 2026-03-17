@@ -27,7 +27,7 @@ logger = structlog.get_logger()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-TARGET_SCHEMA = "ai_radar"
+TARGET_SCHEMA = "ai_data_radar"
 
 # ---------------------------------------------------------------------------
 # Engine & session factory (lazy-initialised on first call to init_db)

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from db.connection import get_session, init_db
-from db.models import Extraction, Finding, Run, Resource, Competitor
+from db.models import Extraction, Finding, Run, Resource, Competitor, RunAudioPreset, RunAssetCache
 import structlog
 
 logger = structlog.get_logger()
@@ -325,6 +325,113 @@ def update_run_blob_paths(
     )
 
 
+# ── 7. AUDIO SCRIPT PATH (after LLM pre-processing step) ─────────────────
+
+def update_audio_script_path(run_db_id: int, blob_path: str) -> None:
+    """Store the blob path of the LLM-generated narration .txt file."""
+    with get_session() as session:
+        run = session.get(Run, run_db_id)
+        if not run:
+            logger.warning("update_audio_script_path: run not found", run_id=run_db_id)
+            return
+        run.audio_script_blob_path = blob_path
+        session.commit()
+    logger.info("DB: audio_script_blob_path saved", run_id=run_db_id, path=blob_path)
+
+
+# ── 8. AUDIO PRESET PATH (after per-preset ElevenLabs generation) ─────────
+
+def update_audio_preset_path(run_db_id: int, preset_id: str, blob_path: str) -> None:
+    """Upsert one row in run_audio_presets for the given (run_id, preset_id).
+
+    Creates the row if it doesn't exist; updates blob_path and marks is_ready=True.
+    """
+    from datetime import datetime, timezone
+    with get_session() as session:
+        existing = (
+            session.query(RunAudioPreset)
+            .filter_by(run_id=run_db_id, preset_id=preset_id)
+            .first()
+        )
+        if existing:
+            existing.blob_path    = blob_path
+            existing.is_ready     = True
+            existing.generated_at = datetime.now(timezone.utc)
+        else:
+            session.add(RunAudioPreset(
+                run_id       = run_db_id,
+                preset_id    = preset_id,
+                blob_path    = blob_path,
+                is_ready     = True,
+                generated_at = datetime.now(timezone.utc),
+            ))
+        session.commit()
+    logger.info("DB: run_audio_presets upserted", run_id=run_db_id, preset=preset_id)
+
+
+def update_audio_preset_sas(run_db_id: int, preset_id: str, sas_entry: dict) -> None:
+    """Upsert one row in run_asset_cache for audio/{preset_id}.
+
+    sas_entry must contain {"url": "...", "expires_at": "ISO string"}.
+    """
+    from datetime import datetime, timezone
+    expires_at_str: str = sas_entry.get("expires_at", "")
+    try:
+        expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+    except Exception:
+        expires_at = datetime.now(timezone.utc)
+
+    with get_session() as session:
+        existing = (
+            session.query(RunAssetCache)
+            .filter_by(run_id=run_db_id, asset_type="audio", preset_id=preset_id)
+            .first()
+        )
+        if existing:
+            existing.sas_url    = sas_entry["url"]
+            existing.expires_at = expires_at
+        else:
+            session.add(RunAssetCache(
+                run_id     = run_db_id,
+                asset_type = "audio",
+                preset_id  = preset_id,
+                sas_url    = sas_entry["url"],
+                expires_at = expires_at,
+            ))
+        session.commit()
+    logger.info("DB: run_asset_cache upserted", run_id=run_db_id, preset=preset_id)
+
+
+def update_pdf_sas(run_db_id: int, sas_entry: dict) -> None:
+    """Upsert the PDF SAS URL in run_asset_cache (asset_type='pdf', preset_id=None)."""
+    from datetime import datetime, timezone
+    expires_at_str: str = sas_entry.get("expires_at", "")
+    try:
+        expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+    except Exception:
+        expires_at = datetime.now(timezone.utc)
+
+    with get_session() as session:
+        existing = (
+            session.query(RunAssetCache)
+            .filter_by(run_id=run_db_id, asset_type="pdf", preset_id=None)
+            .first()
+        )
+        if existing:
+            existing.sas_url    = sas_entry["url"]
+            existing.expires_at = expires_at
+        else:
+            session.add(RunAssetCache(
+                run_id     = run_db_id,
+                asset_type = "pdf",
+                preset_id  = None,
+                sas_url    = sas_entry["url"],
+                expires_at = expires_at,
+            ))
+        session.commit()
+    logger.info("DB: run_asset_cache PDF upserted", run_id=run_db_id)
+
+
 # ── COMPETITOR SOURCE MANAGEMENT ─────────────────────────────────────────
 
 def seed_default_competitors() -> None:
@@ -343,7 +450,6 @@ def seed_default_competitors() -> None:
         _DEFAULT_COMPETITORS = [
             {"name": "OpenAI Blog",       "url": "https://openai.com/blog/rss.xml",      "source_type": "rss",     "selector": None},
             {"name": "Anthropic News",    "url": "https://www.anthropic.com/index.xml",  "source_type": "rss",     "selector": None},
-            {"name": "Google AI Updates", "url": "https://ai.google.dev/updates",         "source_type": "webpage", "selector": ".update-item"},
         ]
         for src in _DEFAULT_COMPETITORS:
             session.add(Competitor(

@@ -46,19 +46,26 @@ REASONING BEFORE ACTING:
 7. Emit the digest as a JSON object.
 
 WRITING STYLE:
-- Executive summary: crisp, 2-3 sentences per item, actionable language
-- Deep dives: detailed but concise, include evidence snippets and citations
-- Use bullet points for quick scanning
-- Every number must map to a quoted evidence snippet (no hallucination)
+- Executive summary: crisp, 2-3 sentences per item, actionable language. Write like a professional analyst memo.
+- Deep dives: detailed but concise, include evidence snippets and citations.
+- Every number must map to a quoted evidence snippet (no hallucination).
+
+HTML OUTPUT FORMAT — APPLIES TO ALL FIELDS — CRITICAL:
+- Output ONLY clean HTML: use <p>...</p> for paragraphs, <strong>...</strong> for emphasis.
+- Do NOT use markdown anywhere (no **, no ##, no -, no bullets, no asterisks, no hashes, no backticks).
+- Do NOT use lists (<ul>/<li>), tables, or raw symbols.
+- Write flowing prose sentences a professional executive can read.
+- Example executive_summary: <p>Today's most significant development is GPT-5 releasing with a 40% benchmark improvement over GPT-4o.</p>
+- Example section: <p>Three new models were released today. <strong>GPT-5</strong> leads benchmarks by a wide margin.</p>
 
 OUTPUT FORMAT: Return ONLY a valid JSON object:
 {
-    "executive_summary": "<markdown text with top 7 items>",
+    "executive_summary": "<clean HTML paragraphs only — NO markdown>",
     "sections": {
-        "research": "<markdown deep-dive for research findings>",
-        "models": "<markdown deep-dive for model provider findings>",
-        "benchmarks": "<markdown deep-dive for HF benchmark, leaderboard, and trending model findings>",
-        "competitors": "<markdown deep-dive for competitor findings>"
+        "research": "<clean HTML paragraphs for research findings — NO markdown>",
+        "models": "<clean HTML paragraphs for model provider findings — NO markdown>",
+        "benchmarks": "<clean HTML paragraphs for benchmark/leaderboard findings — NO markdown>",
+        "competitors": "<clean HTML paragraphs for competitor findings — NO markdown>"
     },
     "top_findings": [<top 7 finding objects>],
     "total_findings": <int>,
