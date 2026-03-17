@@ -6,6 +6,7 @@ Then deterministically calls render_pdf to produce the final PDF.
 """
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,6 +19,74 @@ import structlog
 
 logger = structlog.get_logger()
 
+
+def _md_to_html(text: str) -> str:
+    """Convert simple markdown to styled HTML for PDF rendering.
+
+    Handles: ## headings, **bold**, - bullet lists, bare paragraphs.
+    """
+    if not text:
+        return ""
+
+    lines = text.split("\n")
+    parts: list[str] = []
+    in_list = False
+
+    def _bold(s: str) -> str:
+        return re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", s)
+
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped.startswith("## "):
+            if in_list:
+                parts.append("</ul>")
+                in_list = False
+            heading = _bold(stripped[3:].strip())
+            parts.append(
+                f'<p style="font-weight:700;color:#1e3a5f;margin:7px 0 2px;font-size:9.5pt;">'
+                f"{heading}</p>"
+            )
+
+        elif stripped.startswith("### "):
+            if in_list:
+                parts.append("</ul>")
+                in_list = False
+            heading = _bold(stripped[4:].strip())
+            parts.append(
+                f'<p style="font-weight:600;color:#2d4a7a;margin:5px 0 1px;font-size:9pt;">'
+                f"{heading}</p>"
+            )
+
+        elif stripped.startswith("- ") or stripped.startswith("* "):
+            if not in_list:
+                parts.append('<ul style="margin:3px 0 3px 14px;padding:0;">')
+                in_list = True
+            content = _bold(stripped[2:].strip())
+            parts.append(
+                f'<li style="margin:1px 0;font-size:9pt;color:#374151;">{content}</li>'
+            )
+
+        elif not stripped:
+            if in_list:
+                parts.append("</ul>")
+                in_list = False
+
+        else:
+            if in_list:
+                parts.append("</ul>")
+                in_list = False
+            content = _bold(stripped)
+            parts.append(
+                f'<p style="margin:2px 0;font-size:9pt;color:#374151;">{content}</p>'
+            )
+
+    if in_list:
+        parts.append("</ul>")
+
+    return "\n".join(parts)
+
+
 # ── Load Jinja2 template once at import ───────────────────────────────────
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 
@@ -28,6 +97,7 @@ try:
         autoescape=False,  # we output raw HTML
         auto_reload=True,
     )
+    _jinja_env.filters["md"] = _md_to_html
     _digest_template = _jinja_env.get_template("digest.html")
 except Exception:
     _digest_template = None
