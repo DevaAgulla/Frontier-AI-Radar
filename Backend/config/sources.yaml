@@ -14,9 +14,6 @@ competitor_intel:
       url: "https://openai.com/blog/rss.xml"
     - type: rss
       url: "https://www.anthropic.com/index.xml"
-    - type: webpage
-      url: "https://ai.google.dev/updates"
-      selector: ".update-item"
 
 model_intel:
   # Real sources are managed by core/foundation_model_config.py SOURCE_URLS.

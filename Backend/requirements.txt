@@ -74,3 +74,12 @@ pdfplumber>=0.10.0
 
 # Azure Blob Storage — digest PDF + audio archival
 azure-storage-blob>=12.19.0
+
+# =============================================================================
+# PHASE 3 — LiveKit Agents prototype (parallel voice backend)
+# Install these ONLY when enabling the LiveKit voice path:
+#   pip install 'livekit-agents[deepgram,elevenlabs]' livekit-api livekit-plugins-langchain
+# =============================================================================
+# livekit-agents>=0.8.0
+# livekit-api>=0.7.0
+# livekit-plugins-langchain>=0.1.0

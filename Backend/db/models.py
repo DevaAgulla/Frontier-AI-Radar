@@ -10,7 +10,6 @@ from sqlalchemy import (
     Float,
     String,
     Text,
-    LargeBinary,
     DateTime,
     ForeignKey,
     CheckConstraint,
@@ -79,13 +78,13 @@ class Run(Base):
     started_at    = Column(DateTime(timezone=False), default=lambda: datetime.now(timezone.utc))
     completed_at  = Column(DateTime(timezone=False), nullable=True)
     pdf_path      = Column(Text, nullable=True)
-    pdf_content   = Column(LargeBinary, nullable=True)
     persona_id    = Column(PG_UUID(as_uuid=True), nullable=True)
     config        = Column(JSONB, default=dict)
     # Azure Blob Storage — paths inside the container
-    blob_pdf_path   = Column(Text, nullable=True)     # e.g. Frontier-AI-Radar/digest-20260315-170000/digest.pdf
-    blob_audio_path = Column(Text, nullable=True)     # e.g. Frontier-AI-Radar/digest-20260315-170000/digest_audio.mp3
-    blob_sas_cache  = Column(JSONB, default=dict)     # {"pdf": {"url": "...", "expires_at": "..."}, "audio": {...}}
+    blob_pdf_path           = Column(Text, nullable=True)  # Frontier-AI-Radar/digest-.../digest.pdf
+    blob_audio_path         = Column(Text, nullable=True)  # deprecated — kept for backwards compat
+    audio_script_blob_path  = Column(Text, nullable=True)  # LLM narration .txt in blob
+    active_flag             = Column(String(1), default="Y", nullable=False)
 
     # Relationships
     extraction = relationship("Extraction", back_populates="runs")
@@ -95,6 +94,65 @@ class Run(Base):
 
     def __repr__(self) -> str:
         return f"<Run id={self.id} status={self.status} time_taken={self.time_taken}s>"
+
+
+class RunAudioPreset(Base):
+    """Per-run record of which voice presets have been generated and their blob paths.
+
+    Replaces runs.audio_presets_paths JSONB — one row per (run_id, preset_id).
+    Permanent record; never deleted when SAS expires.
+    """
+
+    __tablename__ = "run_audio_presets"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    run_id       = Column(Integer, ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    preset_id    = Column(String(50), nullable=False)   # e.g. "rachel_professional"
+    blob_path    = Column(Text, nullable=True)           # blob or local path to MP3
+    is_ready     = Column(Boolean, default=False, nullable=False)
+    generated_at = Column(DateTime(timezone=False), nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<RunAudioPreset run={self.run_id} preset={self.preset_id} ready={self.is_ready}>"
+
+
+class RunAssetCache(Base):
+    """Short-lived SAS URL cache per (run_id, asset_type, preset_id).
+
+    Replaces runs.blob_sas_cache JSONB.
+    Rows are upserted on every SAS regeneration; expire independently per preset.
+    asset_type: 'pdf' | 'audio'
+    preset_id:  voice preset id for audio assets, NULL for pdf
+    """
+
+    __tablename__ = "run_asset_cache"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    run_id     = Column(Integer, ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    asset_type = Column(String(50), nullable=False)
+    preset_id  = Column(String(50), nullable=True)
+    sas_url    = Column(Text, nullable=False)
+    expires_at = Column(DateTime(timezone=False), nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<RunAssetCache run={self.run_id} type={self.asset_type} preset={self.preset_id}>"
+
+
+class VoicePreset(Base):
+    """ElevenLabs voice preset catalog (seeded via SQL, managed in DB)."""
+
+    __tablename__ = "voice_presets"
+
+    id               = Column(String(50),  primary_key=True)  # "rachel_professional"
+    voice_id         = Column(String(100), nullable=False)    # ElevenLabs voice ID
+    label            = Column(String(100), nullable=False)    # "Rachel – Female, Professional"
+    gender           = Column(String(20),  nullable=False, default="neutral")
+    style            = Column(String(50),  nullable=False, default="professional")
+    elevenlabs_model = Column(String(100), nullable=False, default="eleven_turbo_v2")
+    is_active        = Column(Boolean, default=True, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<VoicePreset id={self.id} label={self.label}>"
 
 
 class Finding(Base):
@@ -123,7 +181,6 @@ class Finding(Base):
     needs_verification = Column(Boolean, default=False)
     tags               = Column(ARRAY(Text), nullable=True)
     html_content       = Column(Text, nullable=True)
-    pdf_content        = Column(LargeBinary, nullable=True)
     metadata_          = Column("metadata", JSONB, default=dict)  # extra/overflow data
     created_at         = Column(DateTime(timezone=False), default=lambda: datetime.now(timezone.utc))
 

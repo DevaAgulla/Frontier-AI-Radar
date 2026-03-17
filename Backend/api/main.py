@@ -996,24 +996,38 @@ async def export_pdf(run_id: int):
         if not run:
             raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
 
-        if not run.pdf_content:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Run {run_id} has no PDF stored. The pipeline may not have generated a report for this run.",
-            )
-
-        # Derive a nice filename from pdf_path or fall back to run_id
+        from pathlib import Path as _Path
         filename = f"digest-run-{run_id}.pdf"
         if run.pdf_path:
-            from pathlib import Path
-            filename = Path(run.pdf_path).name
+            filename = _Path(run.pdf_path).name
 
-        return Response(
-            content=run.pdf_content,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f'inline; filename="{filename}"',
-            },
+        # Strategy 1: serve from local pdf_path
+        if run.pdf_path and _Path(run.pdf_path).exists():
+            pdf_bytes = _Path(run.pdf_path).read_bytes()
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'inline; filename="{filename}"'},
+            )
+
+        # Strategy 2: redirect via Azure Blob SAS URL
+        if run.blob_pdf_path:
+            try:
+                from storage.blob import get_or_refresh_sas, is_configured
+                from db.persist import update_pdf_sas
+                if is_configured():
+                    url, new_entry = get_or_refresh_sas(run_id, "pdf", run.blob_pdf_path)
+                    if new_entry:
+                        update_pdf_sas(run_id, new_entry)
+                    if url:
+                        from fastapi.responses import RedirectResponse
+                        return RedirectResponse(url=url)
+            except Exception:
+                pass
+
+        raise HTTPException(
+            status_code=404,
+            detail=f"Run {run_id} has no PDF available. The pipeline may not have generated a report yet.",
         )
 
 
@@ -1128,7 +1142,7 @@ async def get_runs(
                 "custom_urls": custom_urls,
                 "agent_statuses": _serialize_agent_statuses(selected_agents, findings_by_agent, normalized_status),
                 "findings_count": len(findings_out),
-                "pdf_available": bool(run.pdf_content),
+                "pdf_available": bool(run.blob_pdf_path or run.pdf_path),
                 "pdf_path": run.pdf_path,
                 "extraction_metadata": extraction_meta,
                 "findings": findings_out,
@@ -1205,7 +1219,7 @@ async def get_run_detail(run_id: int):
             "user_name": user.name if user else None,
             "findings_count": len(findings_out),
             "agent_statuses": _serialize_agent_statuses(selected_agents, findings_by_agent, normalized_status),
-            "pdf_available": bool(run.pdf_content),
+            "pdf_available": bool(run.blob_pdf_path or run.pdf_path),
             "pdf_path": run.pdf_path,
             "findings": findings_out,
             "resources": [
@@ -1903,20 +1917,244 @@ async def get_run_asset_url(
         if not is_configured():
             raise HTTPException(status_code=503, detail="Azure Blob Storage is not configured")
 
-        sas_cache: dict = run.blob_sas_cache or {}
-        url, updated_field = get_or_refresh_sas(sas_cache, type, blob_path)
+        url, new_entry = get_or_refresh_sas(run_id, type, blob_path)
 
         if not url:
             raise HTTPException(status_code=500, detail="Failed to generate secure URL")
 
-        # Persist the refreshed SAS back to DB if it was regenerated
-        if updated_field is not None:
-            new_cache = dict(sas_cache)
-            new_cache[type] = updated_field
-            run.blob_sas_cache = new_cache
-            session.commit()
+        # Persist the refreshed SAS to run_asset_cache if it was regenerated
+        if new_entry is not None:
+            from db.persist import update_pdf_sas
+            update_pdf_sas(run_id, new_entry)
 
         return {"url": url, "asset_type": type}
+
+
+# ── On-Demand Audio Book Generation ──────────────────────────────────────────
+
+@app.get("/api/v1/audio/{run_id}/presets")
+async def list_audio_presets(run_id: int):
+    """Return all active voice presets + which ones have audio for this run.
+
+    Response:
+      { "script_ready": bool,
+        "presets": [{ "id", "label", "gender", "style", "is_ready", "audio_url" }, ...] }
+    """
+    from db.models import VoicePreset, RunAudioPreset
+    from storage.blob import is_configured, get_or_refresh_preset_sas
+    from db.persist import update_audio_preset_sas
+
+    with get_session() as session:
+        run = session.get(Run, run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+        script_ready: bool = bool(run.audio_script_blob_path)
+
+        # Load generated presets from run_audio_presets table (normalized)
+        audio_preset_rows = (
+            session.query(RunAudioPreset)
+            .filter_by(run_id=run_id, is_ready=True)
+            .all()
+        )
+        preset_blob_map: dict = {row.preset_id: row.blob_path for row in audio_preset_rows}
+
+        presets_db = session.query(VoicePreset).filter(VoicePreset.is_active == True).all()
+        preset_list = []
+        for p in presets_db:
+            blob_path = preset_blob_map.get(p.id)
+            is_ready  = bool(blob_path)
+            audio_url: Optional[str] = None
+
+            if is_ready:
+                if is_configured() and blob_path and not blob_path.startswith("/") and ":\\" not in blob_path:
+                    url, new_entry = get_or_refresh_preset_sas(run_id, p.id, blob_path)
+                    if new_entry:
+                        update_audio_preset_sas(run_id, p.id, new_entry)
+                    audio_url = url
+                if not audio_url:
+                    audio_url = f"/api/audio/{run_id}?preset_id={p.id}"
+
+            preset_list.append({
+                "id":        p.id,
+                "label":     p.label,
+                "gender":    p.gender,
+                "style":     p.style,
+                "is_ready":  is_ready,
+                "audio_url": audio_url,
+            })
+
+    return {"script_ready": script_ready, "presets": preset_list}
+
+
+@app.post("/api/v1/audio/{run_id}/generate")
+async def generate_audio_on_demand(
+    run_id:    int,
+    preset_id: str = Query(..., description="Voice preset ID, e.g. rachel_professional"),
+):
+    """Generate audio for one voice preset using the stored audio script.
+
+    Flow:
+      1. Load audio script from runs.audio_script_blob_path
+      2. Fetch voice_id from voice_presets table
+      3. ElevenLabs TTS (batched) on the script
+      4. Save MP3 locally + upload to blob
+      5. Update runs.audio_presets_paths JSON
+      6. Return audio_url for immediate playback
+    """
+    from pathlib import Path as _Path
+    from db.models import VoicePreset
+    from storage.blob import is_configured, blob_path_for_run, upload_file, download_text
+    from storage.post_run import _resolve_elevenlabs_key
+    from voice.generate_voice_digest import tts_from_script, _load_config_env, CONFIG_ENV
+    from db.persist import update_audio_preset_path
+
+    with get_session() as session:
+        run = session.get(Run, run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+        preset = session.get(VoicePreset, preset_id)
+        if not preset:
+            raise HTTPException(status_code=404, detail=f"Voice preset '{preset_id}' not found")
+        script_path_or_blob: Optional[str] = run.audio_script_blob_path
+        started_at_dt = run.started_at
+
+        # Check run_audio_presets table — already generated?
+        from db.models import RunAudioPreset
+        existing_preset = (
+            session.query(RunAudioPreset)
+            .filter_by(run_id=run_id, preset_id=preset_id, is_ready=True)
+            .first()
+        )
+
+    # Return cached immediately if already generated
+    if existing_preset:
+        return {"status": "cached", "preset_id": preset_id,
+                "audio_url": f"/api/audio/{run_id}?preset_id={preset_id}"}
+
+    if not script_path_or_blob:
+        raise HTTPException(
+            status_code=404,
+            detail="Audio script not ready for this run yet. "
+                   "The post-pipeline processing may still be running.",
+        )
+
+    # Read script from blob or local path
+    loop = asyncio.get_event_loop()
+    script_text = ""
+    if is_configured() and not script_path_or_blob.startswith("/") and ":\\" not in script_path_or_blob:
+        try:
+            script_text = await loop.run_in_executor(None, download_text, script_path_or_blob)
+        except Exception as exc:
+            logger.warning("audio_generate: blob read failed, trying local", error=str(exc))
+    if not script_text:
+        local = _Path(script_path_or_blob)
+        if local.exists():
+            script_text = local.read_text(encoding="utf-8")
+        else:
+            raise HTTPException(status_code=404, detail="Audio script file not accessible.")
+
+    api_key = _resolve_elevenlabs_key()
+    if not api_key:
+        raise HTTPException(status_code=503, detail="ElevenLabs API key not configured.")
+
+    cfg          = _load_config_env(CONFIG_ENV)
+    audio_format = cfg.get("AUDIO_FORMAT", "mp3_44100_128")
+    chunk_size   = int(cfg.get("CHUNK_SIZE", 4500))
+
+    date_str = started_at_dt.strftime("%Y%m%d-%H%M%S") if started_at_dt else \
+               datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    audio_dir = _Path(__file__).resolve().parent.parent / "data" / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    out_path = audio_dir / f"digest-{date_str}_{preset_id}.mp3"
+
+    logger.info("audio_generate: starting TTS", run_id=run_id, preset=preset_id,
+                words=len(script_text.split()))
+
+    try:
+        await loop.run_in_executor(
+            None,
+            lambda: tts_from_script(
+                script_text=script_text,
+                voice_id=preset.voice_id,
+                api_key=api_key,
+                out_path=out_path,
+                audio_format=audio_format,
+                chunk_size=chunk_size,
+            ),
+        )
+    except Exception as exc:
+        logger.error("audio_generate: TTS failed", run_id=run_id, preset=preset_id, error=str(exc))
+        raise HTTPException(status_code=500, detail=f"Audio generation failed: {exc}")
+
+    # Upload to blob + update DB
+    stored_path: str = str(out_path)
+    if is_configured():
+        try:
+            bp = blob_path_for_run(date_str, f"presets/{preset_id}.mp3")
+            upload_file(out_path, bp)
+            stored_path = bp
+        except Exception as exc:
+            logger.warning("audio_generate: blob upload failed, keeping local", error=str(exc))
+
+    update_audio_preset_path(run_id, preset_id, stored_path)
+    logger.info("audio_generate: done", run_id=run_id, preset=preset_id)
+    return {"status": "done", "preset_id": preset_id,
+            "audio_url": f"/api/audio/{run_id}?preset_id={preset_id}"}
+
+
+# ── LiveKit Voice Token ───────────────────────────────────────────────────────
+
+@app.get("/api/v1/voice/livekit-token")
+async def get_livekit_token(
+    run_id:  int  = Query(..., description="Digest run ID"),
+    user_id: Optional[int] = Query(default=None),
+    voice:   str  = Query(default="rachel", description="Voice preset: rachel | adam | elli"),
+):
+    """
+    Generate a LiveKit access token for the client to join a voice room.
+
+    Room name convention: "radar-{run_id}" (or "radar-{run_id}-{user_id}" when user_id provided).
+    Room metadata is set to the voice preset so the agent can pick the correct ElevenLabs voice.
+
+    Requires environment variables:
+        LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL
+
+    Returns:
+        {token: str, ws_url: str, room: str}
+    """
+    livekit_api_key    = os.environ.get("LIVEKIT_API_KEY", "")
+    livekit_api_secret = os.environ.get("LIVEKIT_API_SECRET", "")
+    livekit_url        = os.environ.get("LIVEKIT_URL", "")
+
+    if not all([livekit_api_key, livekit_api_secret, livekit_url]):
+        raise HTTPException(
+            status_code=503,
+            detail="LiveKit not configured. Set LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL.",
+        )
+
+    try:
+        from livekit.api import AccessToken, VideoGrants  # type: ignore
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="livekit-api package not installed. Run: pip install livekit-api",
+        )
+
+    room_name = f"radar-{run_id}" + (f"-{user_id}" if user_id else "")
+    identity  = f"user-{user_id or 0}-{run_id}"
+
+    token = (
+        AccessToken(livekit_api_key, livekit_api_secret)
+        .with_identity(identity)
+        .with_name(f"User {user_id or 'anonymous'}")
+        .with_grants(VideoGrants(room_join=True, room=room_name))
+        .with_metadata(voice)          # agent reads this to pick TTS voice
+        .to_jwt()
+    )
+
+    logger.info("livekit_token: issued", room=room_name, user=identity, voice=voice)
+    return {"token": token, "ws_url": livekit_url, "room": room_name}
 
 
 # ── Digest Chat ──────────────────────────────────────────────────────────

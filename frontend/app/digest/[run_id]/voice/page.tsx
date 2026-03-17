@@ -297,6 +297,8 @@ export default function VoicePage() {
   const wsReadyRef          = useRef(false);       // mirror wsReady for callbacks
   const pendingActionRef    = useRef<"greeting" | "listen" | null>(null);
   const startListeningRef   = useRef<() => void>(() => {});
+  const bufferedTextRef     = useRef("");          // text_chunks queued before audio_start fires
+  const audioStartedRef     = useRef(false);       // true once audio_start fires for current turn
 
   // ── Init audio store once ────────────────────────────────────────────────────
   useEffect(() => { audioStoreRef.current = new VoiceAudioStore(); }, []);
@@ -562,6 +564,8 @@ export default function VoicePage() {
           };
         }
 
+        bufferedTextRef.current = "";
+        audioStartedRef.current = false;
         setVoiceState("thinking"); setStatusLabel("Thinking…");
         setTranscripts(prev => {
           const next = [...prev, { role: "assistant" as const, text: "", streaming: true, timestamp: new Date() }];
@@ -573,12 +577,18 @@ export default function VoicePage() {
       }
 
       case "text_chunk":
-        setTranscripts(prev => {
-          const next = [...prev];
-          const idx  = streamingIdxRef.current;
-          if (idx >= 0 && next[idx]) next[idx] = { ...next[idx], text: next[idx].text + msg.text };
-          return next;
-        });
+        if (audioStartedRef.current) {
+          // Audio already playing — stream text live so it syncs with speech
+          setTranscripts(prev => {
+            const next = [...prev];
+            const idx  = streamingIdxRef.current;
+            if (idx >= 0 && next[idx]) next[idx] = { ...next[idx], text: next[idx].text + msg.text };
+            return next;
+          });
+        } else {
+          // Audio not started yet — buffer text to avoid text appearing before voice
+          bufferedTextRef.current += msg.text;
+        }
         break;
 
       case "audio_start":
@@ -587,6 +597,18 @@ export default function VoicePage() {
         aiSpeakingRef.current    = true;
         interruptSentRef.current = false;
         audioPlayerRef.current?.resume();
+        audioStartedRef.current = true;
+        // Flush any text buffered before audio started — text and audio now appear together
+        if (bufferedTextRef.current) {
+          const flushed = bufferedTextRef.current;
+          bufferedTextRef.current = "";
+          setTranscripts(prev => {
+            const next = [...prev];
+            const idx  = streamingIdxRef.current;
+            if (idx >= 0 && next[idx]) next[idx] = { ...next[idx], text: flushed };
+            return next;
+          });
+        }
         // Stop any foreground PTT, start barge-in cycle
         if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch {} recognitionRef.current = null; }
         _startBargeIn();
@@ -596,6 +618,9 @@ export default function VoicePage() {
         break; // MSE plays continuously — no-op
 
       case "turn_done":
+        // Fallback flush: if no audio (no ElevenLabs key), text was buffered — reveal it now
+        bufferedTextRef.current = "";
+        audioStartedRef.current = false;
         setTranscripts(prev => {
           const cleaned = prev.filter(t => t.role !== "tool_status");
           const next    = [...cleaned];

@@ -56,7 +56,7 @@ async def report_generator_agent(state: RadarState) -> RadarState:
 
         brand_name = settings.pdf_brand_name
         brand_colour = settings.pdf_brand_color
-        gen_date = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+        gen_date = datetime.now(timezone.utc).strftime('%B %d, %Y')
 
         # ── Group findings by agent_source ─────────────────────────────
         grouped = {
@@ -78,6 +78,58 @@ async def report_generator_agent(state: RadarState) -> RadarState:
         # Fallback: if digest_json was empty, use digest_markdown
         if not executive_summary and digest_md:
             executive_summary = digest_md
+
+        # Strip residual markdown from any text field before HTML rendering.
+        # The LLM prompts now request HTML, but older cached outputs or model
+        # fallbacks may still emit markdown symbols — clean them as a safety net.
+        import re as _re
+
+        def _to_html(text: str) -> str:
+            """Convert markdown-tainted text to clean HTML paragraphs."""
+            if not text:
+                return text
+            # Convert **bold** / *italic* / __bold__ to <strong>
+            text = _re.sub(r'\*{2,3}(.*?)\*{2,3}', r'<strong>\1</strong>', text)
+            text = _re.sub(r'_{2}(.*?)_{2}', r'<strong>\1</strong>', text)
+            text = _re.sub(r'\*(.*?)\*', r'\1', text)   # single * — just strip
+            # Strip markdown headers (## Heading → stripped)
+            text = _re.sub(r'^#{1,6}\s+', '', text, flags=_re.MULTILINE)
+            # Strip bullet/numbered list markers (leave the text)
+            text = _re.sub(r'^[-*+]\s+', '', text, flags=_re.MULTILINE)
+            text = _re.sub(r'^\d+\.\s+', '', text, flags=_re.MULTILINE)
+            # Strip inline code backticks
+            text = _re.sub(r'`([^`]+)`', r'\1', text)
+            # If no <p> tags present, wrap non-empty lines as paragraphs
+            if '<p>' not in text:
+                paras = [p.strip() for p in text.split('\n') if p.strip()]
+                text = ''.join(f'<p>{p}</p>' for p in paras)
+            return text
+
+        executive_summary = _to_html(executive_summary)
+
+        # Apply the same cleanup to all digest sections
+        for key in list(sections.keys()):
+            sections[key] = _to_html(sections[key])
+
+        # Apply plain-text cleanup (no HTML wrapping) to per-finding short fields
+        def _strip_md(text: str) -> str:
+            """Strip markdown symbols from short plain-text finding fields."""
+            if not text:
+                return text
+            text = _re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', text)
+            text = _re.sub(r'_{1,2}(.*?)_{1,2}', r'\1', text)
+            text = _re.sub(r'^#{1,6}\s+', '', text, flags=_re.MULTILINE)
+            text = _re.sub(r'^[-*+]\s+', '', text, flags=_re.MULTILINE)
+            text = _re.sub(r'`([^`]+)`', r'\1', text)
+            return text.strip()
+
+        for f in findings:
+            if f.get("what_changed"):
+                f["what_changed"] = _strip_md(f["what_changed"])
+            if f.get("why_it_matters"):
+                f["why_it_matters"] = _strip_md(f["why_it_matters"])
+            if f.get("title"):
+                f["title"] = _strip_md(f["title"])
 
         # ── Render via Jinja2 template ─────────────────────────────────
         digest_template = _digest_template

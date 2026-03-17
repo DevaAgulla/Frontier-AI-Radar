@@ -8,6 +8,10 @@ export async function GET(
   { params }: { params: Promise<{ run_id: string }> }
 ) {
   const { run_id } = await params;
+  // preset_id takes priority (new system); fall back to legacy "voice" param
+  const preset_id = request.nextUrl.searchParams.get("preset_id")
+    ?? request.nextUrl.searchParams.get("voice")
+    ?? "";
 
   // ── Strategy 1: Local filesystem (preferred — always the complete master copy) ──
   // Azure blob uploads can be partial; the local file is always the full version.
@@ -31,9 +35,13 @@ export async function GET(
     if (fs.existsSync(audioDir)) {
       const allMp3s = fs.readdirSync(audioDir).filter((f) => f.endsWith(".mp3"));
       if (allMp3s.length > 0) {
-        // Match by run date prefix; fall back to most recent
-        const match = (date8 ? allMp3s.find((f) => f.includes(date8)) : null)
-          ?? allMp3s.sort().at(-1)!;
+        // Prefer file matching date + preset_id; fall back to date-only, then most recent
+        const presetSuffix = preset_id ? `_${preset_id}.mp3` : "";
+        const byDateAndPreset = (date8 && presetSuffix)
+          ? allMp3s.find((f) => f.includes(date8) && f.endsWith(presetSuffix))
+          : null;
+        const byDate = date8 ? allMp3s.find((f) => f.includes(date8)) : null;
+        const match = byDateAndPreset ?? byDate ?? allMp3s.sort().at(-1)!;
 
         console.log(`[audio] Serving local file for run ${run_id}: ${match}`);
         const filePath = path.join(audioDir, match);

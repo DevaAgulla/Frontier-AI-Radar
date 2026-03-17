@@ -161,3 +161,38 @@ JOIN pg_namespace n ON n.oid = r.relnamespace
 WHERE n.nspname  = 'ai_radar'
   AND r.relname IN ('chat_sessions', 'chat_messages', 'chat_answer_cache')
 ORDER BY relname;
+
+
+
+-- ── 1. Voice presets catalog ──────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS voice_presets (
+    id               VARCHAR(50)  PRIMARY KEY,
+    voice_id         VARCHAR(100) NOT NULL,
+    label            VARCHAR(100) NOT NULL,
+    gender           VARCHAR(20)  NOT NULL DEFAULT 'neutral',
+    style            VARCHAR(50)  NOT NULL DEFAULT 'professional',
+    elevenlabs_model VARCHAR(100) NOT NULL DEFAULT 'eleven_turbo_v2',
+    is_active        BOOLEAN      NOT NULL DEFAULT TRUE
+);
+
+INSERT INTO voice_presets (id, voice_id, label, gender, style, elevenlabs_model) VALUES
+  ('rachel_professional', '21m00Tcm4TlvDq8ikWAM', 'Rachel – Female, Professional', 'female', 'professional', 'eleven_turbo_v2'),
+  ('adam_calm',           'pNInz6obpgDQGcFmaJgB', 'Adam – Male, Calm',             'male',   'calm',         'eleven_turbo_v2'),
+  ('elli_energetic',      'MF3mGyEYCl7XYWbV9V6O', 'Elli – Female, Energetic',     'female', 'energetic',    'eleven_turbo_v2')
+ON CONFLICT (id) DO NOTHING;
+
+
+-- ── 2. audio_script_blob_path on runs ────────────────────────────────────────
+-- Stores the path of the LLM-generated narration .txt file in Azure Blob.
+-- Set per-run by the post-pipeline audio script agent.
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS audio_script_blob_path TEXT;
+
+
+-- ── 3. audio_presets_paths on runs (JSONB) ────────────────────────────────────
+-- Stores per-preset MP3 blob paths.
+-- Example: {"rachel_professional": "Frontier-AI-Radar/digest-20260317/rachel_professional.mp3"}
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS audio_presets_paths JSONB DEFAULT '{}';
+
+-- Note: blob_audio_path (TEXT) stays for backwards compat but will be deprecated.
+-- Note: blob_sas_cache (JSONB) stays as-is — we'll nest audio SAS under
+--       {"audio": {"rachel_professional": {"url": "...", "expires_at": "..."}}}

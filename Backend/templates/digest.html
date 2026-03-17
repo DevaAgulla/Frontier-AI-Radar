@@ -696,7 +696,7 @@ hr {
         <p class="cover-tagline">Executive &amp; technical digest — competitor moves, foundation models, research papers, and benchmarks.</p>
         <div class="cover-meta-box">
             <span class="live-dot"></span>
-            <span class="cover-meta-text">{{ generation_date }} &nbsp;·&nbsp; Run {{ run_id }}</span>
+            <span class="cover-meta-text">{{ generation_date }}</span>
         </div>
     </div>
 
@@ -852,9 +852,9 @@ hr {
             </tr>
         </table>
 
-        <!-- Top signals -->
+        <!-- Today's Highlights -->
         <div class="signal-box">
-            <div class="signal-box-head">🔥 Top {{ [findings|length, 5]|min }} Signals Today</div>
+            <div class="signal-box-head">📊 Today's Highlights</div>
             {% for f in findings[:5] %}
             <div class="sig-item">
                 <span class="sig-num">{{ loop.index }}.</span>
@@ -869,8 +869,8 @@ hr {
 
         {% if executive_summary %}
         <div style="margin-top:10px; background:#eff6ff; border-left:4px solid {{ brand_color }}; padding:10px 14px; border-radius:0 6px 6px 0;">
-            <div style="font-size:11pt; font-weight:700; color:{{ brand_color }}; margin-bottom:3px;">Executive Summary</div>
-            <p style="font-size:9.5pt; color:#334155; margin:0;">{{ executive_summary }}</p>
+            <div style="font-size:11pt; font-weight:700; color:{{ brand_color }}; margin-bottom:6px;">Executive Summary</div>
+            <div style="font-size:9.5pt; color:#334155; line-height:1.7;">{{ executive_summary | safe }}</div>
         </div>
         {% endif %}
     </div>
@@ -965,8 +965,8 @@ hr {
 
     {% if section_narrative %}
     <div style="padding:8px 42px 2px;">
-        <div style="background:#f5f8ff; border-left:3px solid {{ sec.text_color }}; padding:8px 12px; border-radius:0 6px 6px 0; font-size:9.5pt; color:#4b5563;">
-            {{ section_narrative }}
+        <div style="background:#f5f8ff; border-left:3px solid {{ sec.text_color }}; padding:8px 12px; border-radius:0 6px 6px 0; font-size:9.5pt; color:#4b5563; line-height:1.7;">
+            {{ section_narrative | safe }}
         </div>
     </div>
     {% endif %}
@@ -1158,7 +1158,6 @@ hr {
         <table class="appendix-footer-table">
             <tr>
                 <td><strong>Generated</strong>{{ generation_date }}</td>
-                <td><strong>Run ID</strong>{{ run_id }}</td>
                 <td><strong>Total Signals</strong>{{ total_findings }} items tracked</td>
                 <td><strong>Publisher</strong>{{ brand_name }}</td>
             </tr>

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/app/context/AuthContext";
+import { PERSONAS, type Persona } from "@/lib/personas";
 
 interface Message {
   role: "user" | "assistant";
@@ -124,6 +125,8 @@ export default function DigestChatPage() {
   const [digestInfo,      setDigestInfo]      = useState<{ date: string; findings_count: number } | null>(null);
   const [quickPrompts,    setQuickPrompts]    = useState<string[]>(DEFAULT_QUICK_PROMPTS);
   const [statusText,      setStatusText]      = useState<string | null>(null);
+  const [activePersona,   setActivePersona]   = useState<string | null>(null);
+  const [sidebarOpen,     setSidebarOpen]     = useState(true);
 
   const messagesEndRef  = useRef<HTMLDivElement>(null);
   const inputRef        = useRef<HTMLInputElement>(null);
@@ -131,6 +134,46 @@ export default function DigestChatPage() {
   // Ref for latest messages — avoids stale closure in sendMessage
   const messagesRef     = useRef<Message[]>([]);
   messagesRef.current   = messages;
+
+  // ── Persona persistence ─────────────────────────────────────────────
+  useEffect(() => {
+    const saved = globalThis.localStorage?.getItem("frontier_active_persona");
+    if (saved) setActivePersona(saved);
+    const savedSidebar = globalThis.localStorage?.getItem("frontier_sidebar_open");
+    if (savedSidebar !== null) setSidebarOpen(savedSidebar !== "false");
+  }, []);
+
+  const selectPersona = useCallback((id: string) => {
+    const next = activePersona === id ? null : id;
+    setActivePersona(next);
+    globalThis.localStorage?.setItem("frontier_active_persona", next ?? "");
+  }, [activePersona]);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen(prev => {
+      const next = !prev;
+      globalThis.localStorage?.setItem("frontier_sidebar_open", String(next));
+      return next;
+    });
+  }, []);
+
+  // Fill input with a persona prompt; select [placeholder] text if present
+  const fillPrompt = useCallback((prompt: string) => {
+    setInput(prompt);
+    const match = /\[([^\]]+)\]/.exec(prompt);
+    if (match) {
+      const start = match.index;
+      const end   = start + match[0].length;
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.setSelectionRange(start, end);
+        }
+      }, 0);
+    } else {
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  }, []);
 
   // ── Load session + history on mount ────────────────────────────────────
   useEffect(() => {
@@ -231,8 +274,9 @@ export default function DigestChatPage() {
           message:    text.trim(),
           history,
           mode,
-          session_id: sessionId,
-          user_id:    user?.id ?? null,
+          session_id:  sessionId,
+          user_id:     user?.id ?? null,
+          persona_id:  activePersona ?? null,
         }),
       });
 
@@ -347,7 +391,7 @@ export default function DigestChatPage() {
       setStatusText(null);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [sending, voiceMode, run_id, sessionId, user?.id]);
+  }, [sending, voiceMode, run_id, sessionId, user?.id, activePersona]);
 
   // ── Voice input (STT) ─────────────────────────────────────────────────
   const handleVoiceInput = () => {
@@ -380,14 +424,84 @@ export default function DigestChatPage() {
   const userInitial    = user?.name?.[0]?.toUpperCase() ?? "U";
   const hasUserMessage = messages.some(m => m.role === "user" && !m.fromHistory);
 
+  const selectedPersona = PERSONAS.find(p => p.id === activePersona) ?? null;
+
   return (
-    <div className="flex flex-col bg-[var(--bg)]" style={{ height: "100dvh" }}>
+    <div className="flex bg-[var(--bg)]" style={{ height: "100dvh" }}>
+
+      {/* ── Persona sidebar ─────────────────────────────────────────────── */}
+      <div className={`flex-none border-r border-[var(--border)] bg-[var(--bg-card)] flex flex-col transition-all duration-200 overflow-hidden ${sidebarOpen ? "w-60" : "w-0"}`}>
+        <div className="px-3 py-3 border-b border-[var(--border)]">
+          <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest">Persona</p>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+          {PERSONAS.map(p => (
+            <button
+              key={p.id}
+              onClick={() => selectPersona(p.id)}
+              className={`w-full text-left px-3 py-2.5 rounded-lg transition-all text-sm ${
+                activePersona === p.id
+                  ? "bg-[var(--primary)] text-white"
+                  : "hover:bg-[var(--bg)] text-[var(--text-primary)] border border-transparent hover:border-[var(--border)]"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-base">{p.icon}</span>
+                <div>
+                  <div className="font-medium text-xs leading-tight">{p.label}</div>
+                  <div className={`text-[10px] leading-tight mt-0.5 ${activePersona === p.id ? "text-white/70" : "text-[var(--text-muted)]"}`}>{p.description}</div>
+                </div>
+              </div>
+            </button>
+          ))}
+
+          {/* Prompt templates for selected persona */}
+          {selectedPersona && (
+            <div className="mt-3">
+              <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest px-1 mb-1.5">Suggested prompts</p>
+              <div className="space-y-1">
+                {selectedPersona.prompts.map((prompt, pi) => (
+                  <button
+                    key={pi}
+                    onClick={() => fillPrompt(prompt)}
+                    className="w-full text-left px-2.5 py-2 rounded-lg text-[11px] text-[var(--text-secondary)] bg-[var(--bg)] border border-[var(--border)] hover:border-[var(--primary)] hover:text-[var(--primary)] hover:bg-[var(--primary-light)] transition-all leading-snug"
+                  >
+                    {prompt.includes("[") ? (
+                      <>
+                        {prompt.split(/(\[[^\]]+\])/g).map((part, idx) =>
+                          /^\[[^\]]+\]$/.test(part)
+                            ? <span key={idx} className="bg-yellow-100 text-yellow-800 rounded px-0.5">{part}</span>
+                            : part
+                        )}
+                      </>
+                    ) : prompt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Main chat column ────────────────────────────────────────────── */}
+      <div className="flex flex-col flex-1 min-w-0">
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div
         className="flex-none border-b border-[var(--border)] bg-[var(--bg-card)] px-4 sm:px-6 py-3 flex items-center gap-3"
         style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}
       >
+        {/* Sidebar toggle */}
+        <button
+          onClick={toggleSidebar}
+          title={sidebarOpen ? "Hide personas" : "Show personas"}
+          className="flex-none text-[var(--text-muted)] hover:text-[var(--primary)] transition-colors p-1 rounded"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+
         <Link
           href="/digest"
           className="flex items-center gap-1.5 text-[var(--text-secondary)] hover:text-[var(--primary)] transition-colors text-sm font-medium flex-none"
@@ -409,6 +523,11 @@ export default function DigestChatPage() {
               {shortDate} · {digestInfo.findings_count} findings
               {sessionId && !sessionLoading && (
                 <span className="ml-2 text-[var(--primary)]">· Session active</span>
+              )}
+              {selectedPersona && (
+                <span className="ml-2 font-medium" style={{ color: "var(--primary)" }}>
+                  · {selectedPersona.icon} {selectedPersona.label}
+                </span>
               )}
             </p>
           )}
@@ -654,6 +773,8 @@ export default function DigestChatPage() {
             : "Text mode · streaming · session saved · 3-tier answer cache"}
         </p>
       </div>
+
+      </div>{/* end main chat column */}
     </div>
   );
 }
