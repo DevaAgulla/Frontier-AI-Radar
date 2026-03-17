@@ -648,11 +648,6 @@ export default function DigestChatPage() {
           </button>
         </div>
 
-        <p className="text-center text-[10px] text-[var(--text-muted)] mt-2">
-          {voiceMode
-            ? "Voice mode · ElevenLabs · session saved · web search on demand"
-            : "Text mode · streaming · session saved · 3-tier answer cache"}
-        </p>
       </div>
     </div>
   );
