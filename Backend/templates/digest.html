@@ -869,8 +869,8 @@ hr {
 
         {% if executive_summary %}
         <div style="margin-top:10px; background:#eff6ff; border-left:4px solid {{ brand_color }}; padding:10px 14px; border-radius:0 6px 6px 0;">
-            <div style="font-size:11pt; font-weight:700; color:{{ brand_color }}; margin-bottom:3px;">Executive Summary</div>
-            <p style="font-size:9.5pt; color:#334155; margin:0;">{{ executive_summary }}</p>
+            <div style="font-size:11pt; font-weight:700; color:{{ brand_color }}; margin-bottom:6px;">Executive Summary</div>
+            <div style="font-size:9.5pt; color:#334155;">{{ executive_summary | md }}</div>
         </div>
         {% endif %}
     </div>
@@ -965,8 +965,8 @@ hr {
 
     {% if section_narrative %}
     <div style="padding:8px 42px 2px;">
-        <div style="background:#f5f8ff; border-left:3px solid {{ sec.text_color }}; padding:8px 12px; border-radius:0 6px 6px 0; font-size:9.5pt; color:#4b5563;">
-            {{ section_narrative }}
+        <div style="background:#f5f8ff; border-left:3px solid {{ sec.text_color }}; padding:10px 14px; border-radius:0 6px 6px 0;">
+            {{ section_narrative | md }}
         </div>
     </div>
     {% endif %}
