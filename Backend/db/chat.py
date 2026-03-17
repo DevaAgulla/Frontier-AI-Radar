@@ -70,16 +70,42 @@ def ensure_chat_schema() -> None:
         except Exception:
             session.execute(text("ROLLBACK TO SAVEPOINT persona_constraint_mig"))
 
+        # Add thread title column
+        session.execute(text("""
+            ALTER TABLE ai_data_radar.chat_sessions
+            ADD COLUMN IF NOT EXISTS title VARCHAR(200)
+        """))
+
+        # Relax unique constraint to allow multiple threads per persona
+        # Use SAVEPOINT to not break if constraint already removed
+        session.execute(text("SAVEPOINT relax_thread_constraint"))
+        try:
+            session.execute(text("""
+                ALTER TABLE ai_data_radar.chat_sessions
+                DROP CONSTRAINT IF EXISTS uq_chat_sessions_user_run_persona
+            """))
+            session.execute(text("RELEASE SAVEPOINT relax_thread_constraint"))
+        except Exception:
+            session.execute(text("ROLLBACK TO SAVEPOINT relax_thread_constraint"))
+
+        # Add index for thread listing (replaces the unique constraint)
+        session.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_persona_run
+            ON ai_data_radar.chat_sessions(user_id, persona_id, run_id, last_active DESC)
+        """))
+
         # Migrate existing answer cache column to vector(384) if still FLOAT[]
-        # Wrapped in savepoint — no-op if already vector type
+        session.execute(text("SAVEPOINT vector_col_mig"))
         try:
             session.execute(text("""
                 ALTER TABLE ai_data_radar.chat_answer_cache
                 ALTER COLUMN question_embedding TYPE vector(384)
                 USING question_embedding::vector(384)
             """))
+            session.execute(text("RELEASE SAVEPOINT vector_col_mig"))
         except Exception:
-            session.rollback()
+            session.execute(text("ROLLBACK TO SAVEPOINT vector_col_mig"))
+        session.execute(text("SAVEPOINT vector_idx_mig"))
         try:
             session.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_cache_embedding_hnsw
@@ -87,12 +113,13 @@ def ensure_chat_schema() -> None:
                 USING hnsw (question_embedding vector_cosine_ops)
                 WITH (m = 16, ef_construction = 64)
             """))
+            session.execute(text("RELEASE SAVEPOINT vector_idx_mig"))
         except Exception:
-            session.rollback()
+            session.execute(text("ROLLBACK TO SAVEPOINT vector_idx_mig"))
 
         # Create conversation_embeddings table for semantic search
         session.execute(text("""
-            CREATE TABLE IF NOT EXISTS ai_radar.conversation_embeddings (
+            CREATE TABLE IF NOT EXISTS ai_data_radar.conversation_embeddings (
                 id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 session_id  UUID NOT NULL,
                 message_id  BIGINT,
@@ -107,18 +134,18 @@ def ensure_chat_schema() -> None:
         """))
         session.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_conv_emb_scope
-            ON ai_radar.conversation_embeddings(user_id, persona_id, run_id)
+            ON ai_data_radar.conversation_embeddings(user_id, persona_id, run_id)
         """))
         session.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_conv_emb_hnsw
-            ON ai_radar.conversation_embeddings
+            ON ai_data_radar.conversation_embeddings
             USING hnsw (embedding vector_cosine_ops)
             WITH (m = 16, ef_construction = 64)
         """))
 
         # Create digest_cache table for pre-embedded digest sections
         session.execute(text("""
-            CREATE TABLE IF NOT EXISTS ai_radar.digest_cache (
+            CREATE TABLE IF NOT EXISTS ai_data_radar.digest_cache (
                 id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 run_id     INTEGER NOT NULL,
                 section    VARCHAR(128),
@@ -129,18 +156,18 @@ def ensure_chat_schema() -> None:
         """))
         session.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_digest_cache_run
-            ON ai_radar.digest_cache(run_id)
+            ON ai_data_radar.digest_cache(run_id)
         """))
         session.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_digest_cache_hnsw
-            ON ai_radar.digest_cache
+            ON ai_data_radar.digest_cache
             USING hnsw (embedding vector_cosine_ops)
             WITH (m = 16, ef_construction = 64)
         """))
 
         # Create conversation_summaries table for rolling summaries
         session.execute(text("""
-            CREATE TABLE IF NOT EXISTS ai_radar.conversation_summaries (
+            CREATE TABLE IF NOT EXISTS ai_data_radar.conversation_summaries (
                 id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 session_id          UUID NOT NULL,
                 user_id             INTEGER,
@@ -154,7 +181,7 @@ def ensure_chat_schema() -> None:
         """))
         session.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_conv_summaries_scope
-            ON ai_radar.conversation_summaries(user_id, persona_id, run_id)
+            ON ai_data_radar.conversation_summaries(user_id, persona_id, run_id)
         """))
 
         session.commit()
@@ -233,6 +260,98 @@ def get_or_create_session(run_id: int, user_id: Optional[int], persona_id: str =
                     "is_new":         False,
                 }
             raise
+
+
+def create_new_thread(run_id: int, user_id: Optional[int], persona_id: str) -> dict:
+    """Always create a fresh chat thread (session). Used by 'New Chat' button."""
+    from db.connection import get_session as db_session
+    from sqlalchemy import text
+
+    with db_session() as session:
+        row = session.execute(text("""
+            INSERT INTO ai_data_radar.chat_sessions (user_id, run_id, persona_id)
+            VALUES (:uid, :rid, :pid)
+            RETURNING id, created_at, last_active
+        """), {"uid": user_id, "rid": run_id, "pid": persona_id}).fetchone()
+        session.commit()
+        return {
+            "session_id":    str(row[0]),
+            "message_count": 0,
+            "created_at":    row[1].isoformat() if row[1] else None,
+            "last_active":   row[2].isoformat() if row[2] else None,
+            "persona_id":    persona_id,
+            "is_new":        True,
+            "title":         None,
+        }
+
+
+def list_threads(user_id: int, persona_id: str, run_id: int, limit: int = 20) -> list:
+    """List chat threads for (user_id, persona_id, run_id), newest first."""
+    try:
+        from db.connection import get_session as db_session
+        from sqlalchemy import text
+
+        with db_session() as session:
+            rows = session.execute(text("""
+                SELECT id, title, message_count, created_at, last_active,
+                       (SELECT content FROM ai_data_radar.chat_messages
+                        WHERE session_id = cs.id ORDER BY created_at DESC LIMIT 1) as last_message
+                FROM ai_data_radar.chat_sessions cs
+                WHERE user_id = :uid AND persona_id = :pid AND run_id = :rid
+                ORDER BY last_active DESC
+                LIMIT :lim
+            """), {"uid": user_id, "pid": persona_id, "rid": run_id, "lim": limit}).fetchall()
+            return [{
+                "thread_id":       str(r[0]),
+                "title":           r[1] or "New conversation",
+                "message_count":   r[2],
+                "created_at":      r[3].isoformat() if r[3] else None,
+                "last_active":     r[4].isoformat() if r[4] else None,
+                "message_preview": (r[5] or "")[:80] if r[5] else "",
+            } for r in rows]
+    except Exception as exc:
+        logger.warning("list_threads_failed", error=str(exc))
+        return []
+
+
+def update_thread_title(session_id: str, title: str) -> None:
+    """Set the auto-generated title for a thread from the first user message."""
+    try:
+        from db.connection import get_session as db_session
+        from sqlalchemy import text
+
+        with db_session() as session:
+            session.execute(text("""
+                UPDATE ai_data_radar.chat_sessions
+                SET title = :title
+                WHERE id = :sid AND title IS NULL
+            """), {"title": title[:200], "sid": session_id})
+            session.commit()
+    except Exception:
+        pass
+
+
+def get_session_info(session_id: str) -> dict:
+    """Return window_context and message_count for a specific session_id.
+
+    Used to load context that is strictly scoped to this thread, not the
+    most-recently-active session for the persona.
+    """
+    from db.connection import get_session as db_session
+    from sqlalchemy import text
+
+    try:
+        with db_session() as session:
+            row = session.execute(text("""
+                SELECT message_count, window_context
+                FROM   ai_data_radar.chat_sessions
+                WHERE  id = CAST(:sid AS uuid)
+            """), {"sid": session_id}).fetchone()
+        if row:
+            return {"message_count": row[0] or 0, "window_context": row[1]}
+    except Exception as exc:
+        logger.warning("get_session_info_failed", session_id=session_id, error=str(exc))
+    return {"message_count": 0, "window_context": None}
 
 
 def load_session_messages(session_id: str, limit: int = 50) -> list[dict]:
@@ -606,7 +725,7 @@ def embed_message_background(
     persona_id: str,
     run_id: Optional[int],
 ) -> None:
-    """Embed a message and store it in ai_radar.conversation_embeddings.
+    """Embed a message and store it in ai_data_radar.conversation_embeddings.
 
     Designed to run in a thread via asyncio.to_thread() — never raises.
     """
@@ -620,7 +739,7 @@ def embed_message_background(
 
         with db_session() as session:
             session.execute(text("""
-                INSERT INTO ai_radar.conversation_embeddings
+                INSERT INTO ai_data_radar.conversation_embeddings
                     (session_id, message_id, user_id, persona_id, run_id, role, content, embedding)
                 VALUES
                     (CAST(:sid AS uuid), :mid, :uid, :pid, :rid, :role, :content,
@@ -643,13 +762,11 @@ def embed_message_background(
 
 def semantic_search_history(
     query_text: str,
-    user_id: int,
-    persona_id: str,
-    run_id: Optional[int],
+    session_id: str,
     limit: int = 5,
     threshold: float = 0.75,
 ) -> list[dict]:
-    """Semantic search over past conversation turns via pgvector <=> operator."""
+    """Semantic search over past conversation turns — strictly scoped to this thread."""
     try:
         from core.embedder import embed_text
         from db.connection import get_session as db_session
@@ -658,21 +775,15 @@ def semantic_search_history(
         embedding = embed_text(query_text)
         vec_str   = "[" + ",".join(map(str, embedding)) + "]"
 
-        params: dict = {"uid": user_id, "pid": persona_id, "emb": vec_str,
+        params: dict = {"sid": session_id, "emb": vec_str,
                         "lim": limit, "thr": 1.0 - threshold}
-        run_filter = ""
-        if run_id is not None:
-            run_filter = "AND run_id = :rid"
-            params["rid"] = run_id
 
         with db_session() as session:
-            rows = session.execute(text(f"""
+            rows = session.execute(text("""
                 SELECT role, content,
                        embedding <=> CAST(:emb AS vector) AS dist
-                FROM   ai_radar.conversation_embeddings
-                WHERE  user_id    = :uid
-                  AND  persona_id = :pid
-                  {run_filter}
+                FROM   ai_data_radar.conversation_embeddings
+                WHERE  session_id = CAST(:sid AS uuid)
                   AND  embedding IS NOT NULL
                 ORDER  BY embedding <=> CAST(:emb AS vector)
                 LIMIT  :lim
@@ -750,7 +861,7 @@ def get_sessions_for_persona(
 # ── Digest Cache (pre-embedded sections) ─────────────────────────────────────
 
 def cache_digest_for_run(run_id: int, sections: list[dict]) -> None:
-    """Embed each digest section and store in ai_radar.digest_cache.
+    """Embed each digest section and store in ai_data_radar.digest_cache.
 
     Idempotent: skips if run_id already has cached rows. Never raises.
     sections: list of {"section": str, "content": str}
@@ -762,7 +873,7 @@ def cache_digest_for_run(run_id: int, sections: list[dict]) -> None:
 
         with db_session() as session:
             count_row = session.execute(text("""
-                SELECT COUNT(*) FROM ai_radar.digest_cache WHERE run_id = :rid
+                SELECT COUNT(*) FROM ai_data_radar.digest_cache WHERE run_id = :rid
             """), {"rid": run_id}).fetchone()
             if count_row and count_row[0] > 0:
                 logger.info("cache_digest_for_run_skip", run_id=run_id,
@@ -782,7 +893,7 @@ def cache_digest_for_run(run_id: int, sections: list[dict]) -> None:
                     vec_str = None
 
                 session.execute(text("""
-                    INSERT INTO ai_radar.digest_cache (run_id, section, content, embedding)
+                    INSERT INTO ai_data_radar.digest_cache (run_id, section, content, embedding)
                     VALUES (:rid, :sec, :content,
                             CASE WHEN :emb IS NOT NULL THEN CAST(:emb AS vector) ELSE NULL END)
                 """), {
@@ -799,7 +910,7 @@ def cache_digest_for_run(run_id: int, sections: list[dict]) -> None:
 
 
 def get_semantic_digest_context(run_id: int, query_text: str, limit: int = 6) -> str:
-    """Semantic search over ai_radar.digest_cache via pgvector <=> operator."""
+    """Semantic search over ai_data_radar.digest_cache via pgvector <=> operator."""
     try:
         from core.embedder import embed_text
         from db.connection import get_session as db_session
@@ -811,7 +922,7 @@ def get_semantic_digest_context(run_id: int, query_text: str, limit: int = 6) ->
         with db_session() as session:
             rows = session.execute(text("""
                 SELECT section, content
-                FROM   ai_radar.digest_cache
+                FROM   ai_data_radar.digest_cache
                 WHERE  run_id    = :rid
                   AND  embedding IS NOT NULL
                 ORDER  BY embedding <=> CAST(:emb AS vector)

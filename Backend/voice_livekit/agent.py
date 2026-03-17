@@ -429,7 +429,7 @@ async def entrypoint(ctx):
             with db_session() as sess:
                 row = sess.execute(sa_text("""
                     SELECT digest_system_prompt
-                    FROM   ai_radar.persona_templates
+                    FROM   ai_data_radar.persona_templates
                     WHERE  persona_type = :pid AND is_system_default = TRUE
                     LIMIT  1
                 """), {"pid": persona_id}).fetchone()

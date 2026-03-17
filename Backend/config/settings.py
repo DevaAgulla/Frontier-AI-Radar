@@ -24,7 +24,17 @@ class Settings(BaseSettings):
         default="https://openrouter.ai/api/v1",
         env="OPENROUTER_BASE_URL",
     )
-    # LLM backend: "openrouter" or "gemini"
+    # OpenAI (direct)
+    openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
+    openai_model: str = Field(default="gpt-4o", env="OPENAI_MODEL")
+
+    # Azure OpenAI
+    azure_openai_api_key: Optional[str] = Field(default=None, env="AZURE_OPENAI_API_KEY")
+    azure_openai_endpoint: str = Field(default="", env="AZURE_OPENAI_ENDPOINT")
+    azure_openai_deployment: str = Field(default="gpt-4o", env="AZURE_OPENAI_DEPLOYMENT")
+    azure_openai_api_version: str = Field(default="2024-08-01-preview", env="AZURE_OPENAI_API_VERSION")
+
+    # LLM backend: "openrouter", "openai", "azure_openai", or "gemini"
     llm_backend: str = Field(default="openrouter", env="LLM_BACKEND")
 
     # LangSmith

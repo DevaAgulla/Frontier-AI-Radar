@@ -8,6 +8,19 @@ export interface Persona {
 
 export const PERSONAS: Persona[] = [
   {
+    id: "general",
+    label: "General",
+    icon: "🔭",
+    description: "Your real-time AI industry radar — ask anything about today's digest",
+    prompts: [
+      "Give me the top 3 highlights from this week's AI digest.",
+      "What competitor moves happened this week?",
+      "Any new AI model or product releases I should know about?",
+      "How does this week's news affect Centific's strategy?",
+      "What's the most important AI development this week?",
+    ],
+  },
+  {
     id: "sales_leader",
     label: "Sales Leader",
     icon: "📊",
