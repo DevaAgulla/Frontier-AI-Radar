@@ -2192,6 +2192,7 @@ async def list_audio_presets(run_id: int):
                 "label":     p.label,
                 "gender":    p.gender,
                 "style":     p.style,
+                "region":    getattr(p, "region", "global"),
                 "is_ready":  is_ready,
                 "audio_url": audio_url,
             })

@@ -43,7 +43,8 @@
       "WebFetch(domain:livekit.com)",
       "Bash(python -c \"import inspect; from livekit.agents import AgentSession; print\\(inspect.signature\\(AgentSession.__init__\\)\\)\")",
       "Bash(python3 -c \"import inspect; from livekit.agents import AgentSession; print\\(inspect.signature\\(AgentSession.__init__\\)\\)\")",
-      "Bash(\"/c/Users/RathlavathRameshnaya/Videos/InternalHackathon/python-venv/Scripts/python.exe\" -c \":*)"
+      "Bash(\"/c/Users/RathlavathRameshnaya/Videos/InternalHackathon/python-venv/Scripts/python.exe\" -c \":*)",
+      "Bash(grep -n \"list_audio_presets\\\\|/audio/\\\\|/api/v1/audio\" /c/Users/RathlavathRameshnaya/Videos/InternalHackathon/frontend/app/digest/[run_id]/voice/page.tsx)"
     ]
   }
 }

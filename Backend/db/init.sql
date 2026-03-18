@@ -176,9 +176,48 @@ CREATE TABLE IF NOT EXISTS voice_presets (
 );
 
 INSERT INTO voice_presets (id, voice_id, label, gender, style, elevenlabs_model) VALUES
-  ('rachel_professional', '21m00Tcm4TlvDq8ikWAM', 'Rachel – Female, Professional', 'female', 'professional', 'eleven_turbo_v2'),
-  ('adam_calm',           'pNInz6obpgDQGcFmaJgB', 'Adam – Male, Calm',             'male',   'calm',         'eleven_turbo_v2'),
-  ('elli_energetic',      'MF3mGyEYCl7XYWbV9V6O', 'Elli – Female, Energetic',     'female', 'energetic',    'eleven_turbo_v2')
+  -- ── Original presets ─────────────────────────────────────────────────────
+  ('rachel_professional',   '21m00Tcm4TlvDq8ikWAM', 'Rachel – Female, Professional (American)',   'female', 'american',        'eleven_turbo_v2'),
+  ('adam_calm',             'pNInz6obpgDQGcFmaJgB', 'Adam – Male, Calm (American)',                'male',   'american',        'eleven_turbo_v2'),
+  ('elli_energetic',        'MF3mGyEYCl7XYWbV9V6O', 'Elli – Female, Energetic (American)',        'female', 'american',        'eleven_turbo_v2'),
+  -- ── American ─────────────────────────────────────────────────────────────
+  ('jessica_conversational','cgSgspJ2msm6clMCkdW9', 'Jessica – Female, Conversational (American)','female', 'american',        'eleven_turbo_v2'),
+  ('eric_trustworthy',      'cjVigY5qzO86Huf0OWal', 'Eric – Male, Trustworthy (American)',         'male',   'american',        'eleven_turbo_v2'),
+  ('matilda_educational',   'XrExE9yKIg1WjnnlVkGX', 'Matilda – Female, Educational (American)',   'female', 'american',        'eleven_turbo_v2'),
+  ('brian_deep',            'nPczCjzI2devNBz1zQrb', 'Brian – Male, Deep & Comforting (American)', 'male',   'american',        'eleven_turbo_v2'),
+  ('sarah_mature',          'EXAVITQu4vr4xnSDxMaL', 'Sarah – Female, Mature & Confident (American)','female','american',       'eleven_turbo_v2'),
+  -- ── British ──────────────────────────────────────────────────────────────
+  ('daniel_british',        'onwK4e9ZLuTAKqWW03F9', 'Daniel – Male, Broadcaster (British)',        'male',   'british',         'eleven_turbo_v2'),
+  ('alice_british',         'Xb7hH8MSUJpSbSDYk0k2', 'Alice – Female, Educator (British)',          'female', 'british',         'eleven_turbo_v2'),
+  ('george_british',        'JBFqnCBsd6RMkjVDRZzb', 'George – Male, Storyteller (British)',        'male',   'british',         'eleven_turbo_v2'),
+  ('lily_british',          'pFZP5JQG7iQjIQuC4Bku', 'Lily – Female, Velvety (British)',            'female', 'british',         'eleven_turbo_v2'),
+  ('emilia_british',        'E4IXevHtHpKGh0bvrPPr', 'Emilia – Female, Young Narrator (British)',  'female', 'british',         'eleven_turbo_v2'),
+  -- ── Australian ───────────────────────────────────────────────────────────
+  ('charlie_australian',    'IKne3meq5aSn9XLyUdCD', 'Charlie – Male, Energetic (Australian)',      'male',   'australian',      'eleven_turbo_v2'),
+  ('samuel_australian',     'FrejFnPpRNrX6s6raOSX', 'Samuel – Male, Calm & Steady (Australian)',  'male',   'australian',      'eleven_turbo_v2'),
+  ('brad_australian',       'HZTk7bUIkiI7yT7FKH4h', 'Brad – Male, Meditation (Australian)',       'male',   'australian',      'eleven_turbo_v2'),
+  -- ── Indian ───────────────────────────────────────────────────────────────
+  ('aaditya_indian',        'qWdiyiWdNPlPyVCOLW0h', 'Aaditya K – Male, Storyteller (Indian)',      'male',   'indian',          'eleven_turbo_v2'),
+  ('diya_indian',           'Rk0hF1X0z2RQCmWH9SCb', 'Diya – Female, Soft & Trustworthy (Indian)', 'female', 'indian',          'eleven_turbo_v2'),
+  ('raju_indian',           'pzxut4zZz4GImZNlqQ3H', 'Raju – Male, Customer Care (Indian)',         'male',   'indian',          'eleven_turbo_v2'),
+  ('rhea_indian',           'eUdJpUEN3EslrgE24PKx', 'Rhea – Female, Polished (Indian)',            'female', 'indian',          'eleven_turbo_v2'),
+  ('rahul_indian',          'u7bRcYbD7visSINTyAT8', 'Rahul – Male, Energetic (Indian)',            'male',   'indian',          'eleven_turbo_v2'),
+  ('tarun_indian',          'v9Yyk1Gw8jEMGWtj1hgu', 'Tarun D – Male, Rich & Polished (Indian)',   'male',   'indian',          'eleven_turbo_v2'),
+  -- ── Irish ────────────────────────────────────────────────────────────────
+  ('maeve_irish',           'kOvUpYLYS0rKGldsKcD1', 'Maeve – Female, Soft (Irish)',                'female', 'irish',           'eleven_turbo_v2'),
+  ('emily_irish',           'odyUrTN5HMVKujvVAgWW', 'Emily – Female, Influencer (Irish)',          'female', 'irish',           'eleven_turbo_v2'),
+  -- ── Scottish ─────────────────────────────────────────────────────────────
+  ('mark_scottish',         'pp4ihOlfDr2MgdTALvoR', 'Mark – Male, Warm Narrator (Scottish)',       'male',   'scottish',        'eleven_turbo_v2'),
+  -- ── German accent ────────────────────────────────────────────────────────
+  ('chris_german',          'blS2CVtvoZT2lNa8n6qk', 'Chris – Male, English with German Accent',   'male',   'german',          'eleven_turbo_v2'),
+  -- ── Spanish / Latin American ─────────────────────────────────────────────
+  ('ernesto_spanish',       'ZwLTvq6uCfb4W00YFl7F', 'Ernesto – Male, Mexican-American (Spanish)', 'male',   'latin american',  'eleven_turbo_v2'),
+  -- ── Nigerian ─────────────────────────────────────────────────────────────
+  ('favour_nigerian',       'ZXZq039skp0kfF9gO7Au', 'Favour – Female, Calm Narrator (Nigerian)',  'female', 'nigerian',        'eleven_turbo_v2'),
+  -- ── Persian / Iranian ────────────────────────────────────────────────────
+  ('shahram_persian',       'rNb3hdSf0n4ROIbYC8Bl', 'Shahram – Male, Documentary (Persian/Farsi)','male',   'persian',         'eleven_turbo_v2'),
+  -- ── New Zealand ──────────────────────────────────────────────────────────
+  ('liam_nz',               '6J1lB05oyDOLPaxMFyS9', 'Liam – Male, Narrator (New Zealand)',         'male',   'new zealand',     'eleven_turbo_v2')
 ON CONFLICT (id) DO NOTHING;
 
 

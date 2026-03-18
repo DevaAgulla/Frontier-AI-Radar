@@ -35,7 +35,22 @@ Environment variables (Backend/.env):
 """
 from __future__ import annotations
 
+# ── Fix 2: Windows ProactorEventLoop is incompatible with psycopg async and
+# causes LangGraph checkpointer failures + async pipeline instability under
+# concurrent load. Force SelectorEventLoop before any other import touches
+# the event loop policy.
 import asyncio
+import selectors
+
+if isinstance(asyncio.get_event_loop_policy(), asyncio.DefaultEventLoopPolicy):
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+
+# Override loop creation to always use SelectorEventLoop (compatible with psycopg)
+_original_new_event_loop = asyncio.new_event_loop
+def _selector_event_loop() -> asyncio.SelectorEventLoop:
+    return asyncio.SelectorEventLoop(selectors.SelectSelector())
+asyncio.new_event_loop = _selector_event_loop  # type: ignore[assignment]
+
 import os
 import json
 import logging
@@ -48,6 +63,12 @@ logger = structlog.get_logger(__name__)
 # ── LiveKit core imports (always available if livekit-agents is installed) ──────
 from livekit.agents import AgentSession, Agent
 from livekit.agents.voice.room_io import RoomOptions
+
+# ── Fix 1: per-room session registry ─────────────────────────────────────────
+# Keyed by room name. Stores the live AgentSession so we can aclose() it before
+# starting a new one for the same room — preventing two sessions from running
+# simultaneously and destroying each other's Deepgram/ElevenLabs connections.
+_active_sessions: dict[str, AgentSession] = {}
 
 # ── Plugin imports — done at module level so the IPC worker subprocess has them
 # available. If these fail the worker logs a clear ImportError rather than a
@@ -293,8 +314,6 @@ def build_radar_llm_plugin(run_id: int, session_id: str, user_id: Optional[int] 
             logger.info("livekit_llm_turn", run_id=self._run_id, session=self._session_id,
                         chars=len(user_text))
 
-            await _pub({"type": "thinking"})
-
             # Build context — use persona prompt + voice identity + voice suffix if available
             effective_prompt = (
                 (VOICE_IDENTITY_PREFIX + self._persona_prompt + VOICE_PERSONA_SUFFIX)
@@ -326,6 +345,7 @@ def build_radar_llm_plugin(run_id: int, session_id: str, user_id: Optional[int] 
             }
 
             full_text = ""
+            token_count = 0
 
             try:
                 async for event in graph.astream_events(chat_state, config=invoke_cfg, version="v2"):
@@ -335,6 +355,7 @@ def build_radar_llm_plugin(run_id: int, session_id: str, user_id: Optional[int] 
                         token = event["data"]["chunk"].content
                         if token:
                             full_text += token
+                            token_count += 1
                             # Yield chunk to LiveKit — it feeds this into TTS
                             self._event_ch.send_nowait(
                                 lk_llm.ChatChunk(
@@ -345,6 +366,9 @@ def build_radar_llm_plugin(run_id: int, session_id: str, user_id: Optional[int] 
                                     ),
                                 )
                             )
+                            if token_count == 1:
+                                logger.info("livekit_first_token_sent_to_tts",
+                                            token_preview=token[:30])
                             # Fire-and-forget word token to frontend for real-time
                             # transcript sync. Text appears as LLM generates it,
                             # ~500ms ahead of TTS audio — visually synced.
@@ -362,6 +386,8 @@ def build_radar_llm_plugin(run_id: int, session_id: str, user_id: Optional[int] 
 
             except asyncio.CancelledError:
                 # User interrupted mid-turn — save partial response
+                logger.info("livekit_turn_cancelled",
+                            tokens_sent=token_count, chars=len(full_text))
                 if full_text.strip():
                     try:
                         save_message(self._session_id, "user",      user_text,                 mode="voice")
@@ -369,6 +395,10 @@ def build_radar_llm_plugin(run_id: int, session_id: str, user_id: Optional[int] 
                     except Exception as save_err:
                         logger.warning("livekit_partial_save_failed", error=str(save_err))
                 return
+
+            logger.info("livekit_llm_stream_complete",
+                        tokens_sent_to_tts=token_count,
+                        total_chars=len(full_text))
 
             # Persist complete turn
             try:
@@ -380,6 +410,19 @@ def build_radar_llm_plugin(run_id: int, session_id: str, user_id: Optional[int] 
                 await _pub({"type": "turn_done", "text": full_text})
             except Exception as db_err:
                 logger.warning("livekit_save_failed", error=str(db_err))
+
+            # Fix 4 — farewell detection: if the agent said goodbye, send a
+            # session_end packet after a short delay (lets TTS finish speaking)
+            # so the frontend can gracefully close the room connection.
+            _FAREWELL = ["bye", "goodbye", "have a great day", "take care",
+                         "see you", "farewell", "talk soon", "good night"]
+            if any(sig in full_text.lower() for sig in _FAREWELL):
+                async def _send_session_end() -> None:
+                    await asyncio.sleep(3.5)   # wait for TTS to finish speaking
+                    await _pub({"type": "session_end"})
+                    logger.info("livekit_session_end_sent",
+                                run_id=self._run_id, session=self._session_id)
+                asyncio.create_task(_send_session_end())
 
     return RadarLLMPlugin()
 
@@ -420,6 +463,12 @@ async def entrypoint(ctx):
     # Resolve credentials
     el_key       = _resolve_elevenlabs_key()
     deepgram_key = _resolve_deepgram_key()
+
+    logger.info("livekit_credentials_resolved",
+                el_key_len=len(el_key),
+                el_key_prefix=el_key[:8] + "..." if len(el_key) > 8 else "(empty)",
+                deepgram_key_len=len(deepgram_key),
+                deepgram_key_prefix=deepgram_key[:8] + "..." if len(deepgram_key) > 8 else "(empty)")
 
     # Guard: warn loudly if ElevenLabs key is missing — this causes silent TTS
     # failure (AgentSession swallows the 401 if no "error" listener is attached).
@@ -493,6 +542,11 @@ async def entrypoint(ctx):
     # Configure AgentSession with STT + our LLM + TTS
     # Note: deepgram.VAD was removed in livekit-agents v1.x.
     # Turn detection is handled by Deepgram STT (vad_events=True default) + AgentSession.
+    logger.info("livekit_tts_config",
+                voice_id=voice_id, voice_name=voice_name,
+                model="eleven_flash_v2_5", encoding="mp3_44100_128",
+                api_key_provided=(len(el_key) > 0))
+
     session = AgentSession(
         stt=deepgram.STT(
             api_key=deepgram_key,
@@ -500,16 +554,8 @@ async def entrypoint(ctx):
             language="en-US",
             punctuate=True,
             interim_results=True,
-            # ── Endpointing: 1200ms gives room for natural mid-sentence pauses
-            # (e.g. "about [pause] the update"). 800ms was too aggressive —
-            # a 300-500ms hesitation pause split the utterance into two turns.
-            # utterance_end_ms does not exist in this plugin version — omitted.
-            endpointing_ms=1200,
-            # smart_format helps Deepgram recognise incomplete sentences and
-            # avoid premature endpointing on short unfinished phrases.
+            endpointing_ms=20000,
             smart_format=True,
-            # Filler words (um/uh/ah) reset the silence timer — disable them
-            # so they don't delay endpointing or create spurious utterances.
             filler_words=False,
         ),
         llm=radar_llm,
@@ -520,68 +566,178 @@ async def entrypoint(ctx):
             **({"api_key": el_key} if el_key else {}),
             voice_id=voice_id,
             model="eleven_flash_v2_5",
-            # PCM bypasses the MP3 decode step inside AudioByteStream.
-            # MP3 transcoding in the LiveKit pipeline is a common silent
-            # failure point; PCM is raw samples that feed directly into
-            # the AudioSource with no intermediate decode step.
-            encoding="pcm_16000",
-            # Lower streaming latency + smaller first TTS chunk → first
-            # audio arrives ~200ms sooner after LLM generation ends.
-            streaming_latency=3,
-            chunk_length_schedule=[50, 120, 200, 260],
+            # MP3 44100 128kbps — high quality, well-tested decode path in
+            # LiveKit's AudioByteStream on all platforms including Windows.
+            # pcm_16000 requires a separate raw-PCM pipeline that can silently
+            # fail on Windows, producing no audio without any error log.
+            encoding="mp3_44100_128",
+            # Larger initial chunk (120 chars) gives ElevenLabs enough sentence
+            # context to generate natural prosody for the first audio segment.
+            # The old [50,…] schedule caused audio jitter because 50-char
+            # fragments lack punctuation/rhythm context → unnatural pauses.
+            chunk_length_schedule=[120, 200, 350],
+            # sync_alignment=False — disables ElevenLabs word-timing callbacks.
+            # With sync_alignment=True (default), the plugin fires LiveKit's
+            # TranscriptionReceived for every agent utterance. Combined with our
+            # own word_token data-packet path, that creates two transcript bubbles
+            # per turn (duplicate messages in the UI). Disabling it leaves our
+            # word_token + tts_started approach as the sole text source.
+            # sync_alignment=True: ElevenLabs returns word-level timing alongside
+            # audio chunks. LiveKit publishes these as TranscriptionReceived events
+            # on the agent's audio track — frontend uses them for real-time
+            # word-by-word text reveal synced to the actual audio playback.
+            sync_alignment=True,
         ),
-        # ── Bug 2 fix: explicit turn-detection and interruption parameters.
-        # min_endpointing_delay=0.5 — 500ms natural pause before agent replies (default).
-        # allow_interruptions=True  — user can interrupt mid-response (default).
-        # min_interruption_duration=0.5 — user must speak 500ms to count as interrupt (default).
-        # min_interruption_words=2  — user must say ≥2 words; prevents single-word
-        #   noise ("uh", "mm") from cancelling the agent's reply.
         min_endpointing_delay=0.5,
-        allow_interruptions=True,
-        min_interruption_duration=0.5,
-        min_interruption_words=2,
+        allow_interruptions=False,
     )
 
-    # ── Bug 3 fix: audio-text sync via agent_state_changed events.
-    # The LLM streams tokens ~500ms ahead of TTS audio. Without this, frontend
-    # text appears before the voice starts — they are out of sync.
-    # Solution: emit tts_started when AgentState transitions to "speaking"
-    # (i.e., when ElevenLabs audio actually begins playing in the room) and
-    # tts_stopped when it transitions away from "speaking".
-    # The frontend buffers word_token packets until tts_started fires, then
-    # flushes the buffer — text appears exactly when the voice begins.
+    # ── Session state (cooldown tracking) ────────────────────────────────────────
+    session_state: dict = {
+        "spoke_during_cooldown": False,
+        "in_cooldown":           False,
+        "skip_cooldown":         False,   # set True when user explicitly interrupts
+    }
+
+    # ── Room data publisher ───────────────────────────────────────────────────────
+    async def _pub(data: dict) -> None:
+        try:
+            payload = json.dumps(data).encode()
+            await ctx.room.local_participant.publish_data(payload, reliable=True)
+        except Exception:
+            pass
+
+    # ── Cooldown: 3-second follow-up window after agent finishes speaking ─────────
+    # STT is re-enabled during cooldown so the user can naturally continue.
+    # If no speech arrives in 3 s the agent goes to idle and mutes STT.
+    async def _do_cooldown() -> None:
+        await _pub({"type": "state_change", "state": "cooldown"})
+        session.input.set_audio_enabled(True)
+        session_state["in_cooldown"]           = True
+        session_state["spoke_during_cooldown"] = False
+        await asyncio.sleep(3.0)
+        session_state["in_cooldown"] = False
+        if not session_state["spoke_during_cooldown"]:
+            session.input.set_audio_enabled(False)
+            await _pub({
+                "type":    "state_change",
+                "state":   "idle",
+                "message": "No more questions? Feel free to come back anytime!",
+            })
+        # If user spoke, agent_state_changed → thinking already took over.
+
+    # ── State machine: agent_state_changed ────────────────────────────────────────
+    # Golden rules:
+    #   thinking  → STT stays ON (Deepgram needs audio to keep connection alive)
+    #   speaking  → STT stays ON; allow_interruptions=False blocks acting on input
+    #   speaking→* → 3 s cooldown (unless user explicitly interrupted)
+    #   initial listening (initializing→listening) → STT OFF, publish state_change:idle
     @session.on("agent_state_changed")
     def on_agent_state_changed(ev) -> None:
-        if ev.new_state == "speaking":
-            payload = json.dumps({"type": "tts_started"}).encode()
-            asyncio.create_task(
-                ctx.room.local_participant.publish_data(payload, reliable=True)
-            )
-        elif ev.old_state == "speaking":
-            payload = json.dumps({"type": "tts_stopped"}).encode()
-            asyncio.create_task(
-                ctx.room.local_participant.publish_data(payload, reliable=True)
-            )
+        old = str(ev.old_state)
+        new = str(ev.new_state)
+        logger.info("livekit_agent_state", old=old, new=new)
 
-    # Surface TTS / STT / LLM errors that AgentSession would otherwise swallow.
-    # Without this, a 401 from ElevenLabs (bad API key) or a Deepgram disconnect
-    # produces no log output and the agent appears to work (text shows) but
-    # audio is completely silent.
+        if new == "thinking":
+            # Do NOT disable STT here. Disabling audio during thinking starves Deepgram
+            # of data for 15-60s → Deepgram closes connection with timeout 1011 →
+            # reconnect required → the agent "sticks" mid-conversation.
+            # allow_interruptions=False (set on AgentSession) already ensures the agent
+            # ignores any user speech captured during thinking/speaking.
+            asyncio.create_task(_pub({"type": "state_change", "state": "thinking"}))
+
+        elif new == "speaking":
+            asyncio.create_task(_pub({"type": "state_change", "state": "speaking"}))
+
+        elif old == "speaking":
+            # TTS just finished — enter cooldown unless user explicitly interrupted
+            if session_state.get("skip_cooldown"):
+                session_state["skip_cooldown"] = False
+                session.input.set_audio_enabled(True)
+                asyncio.create_task(_pub({"type": "state_change", "state": "listening"}))
+            else:
+                asyncio.create_task(_do_cooldown())
+
+        elif new == "listening" and old == "initializing":
+            # Very first listening state — start muted; user must tap "Tap to Speak"
+            session.input.set_audio_enabled(False)
+            asyncio.create_task(_pub({"type": "state_change", "state": "idle"}))
+
+        elif new == "listening":
+            # Any other listening transition (rare guard)
+            session.input.set_audio_enabled(True)
+            asyncio.create_task(_pub({"type": "state_change", "state": "listening"}))
+
+    # ── User speech detection — track speaking during cooldown ───────────────────
+    @session.on("user_state_changed")
+    def on_user_state_changed(ev) -> None:
+        if str(ev.new_state) == "speaking" and session_state.get("in_cooldown"):
+            session_state["spoke_during_cooldown"] = True
+            asyncio.create_task(_pub({"type": "state_change", "state": "listening"}))
+
+    # ── Surface TTS / STT / LLM errors ───────────────────────────────────────────
     @session.on("error")
     def on_session_error(ev) -> None:
         logger.error("livekit_agent_error",
                      error=str(ev.error),
-                     source=type(ev.source).__name__)
+                     source=type(ev.source).__name__,
+                     error_type=type(ev.error).__name__)
 
-    await session.start(
-        Agent(
-            instructions=_build_agent_instructions(),
-        ),
-        room=ctx.room,
-        room_options=RoomOptions(),
-    )
+    @session.on("speech_created")
+    def on_speech_created(ev) -> None:
+        logger.info("livekit_speech_created",
+                    allow_interruptions=getattr(ev, "allow_interruptions", None),
+                    source=type(ev).__name__)
 
-    logger.info("livekit_agent_session_started", room=ctx.room.name)
+    # ── Data messages from frontend ───────────────────────────────────────────────
+    # user_interrupt — "Tap to Interrupt": stop TTS, skip cooldown, go straight to listening
+    # tap_to_speak   — "Tap to Speak" (from idle/cooldown): unmute, go to listening
+    @ctx.room.on("data_received")
+    def on_data_received(packet) -> None:
+        try:
+            msg   = json.loads(packet.data.decode())
+            mtype = msg.get("type")
+            if mtype == "user_interrupt":
+                logger.info("livekit_user_interrupt_received")
+                session_state["skip_cooldown"] = True   # bypass cooldown on explicit interrupt
+                session.interrupt()
+                session.input.set_audio_enabled(True)
+                asyncio.create_task(_pub({"type": "state_change", "state": "listening"}))
+            elif mtype == "tap_to_speak":
+                logger.info("livekit_tap_to_speak_received")
+                session_state["in_cooldown"] = False
+                session.input.set_audio_enabled(True)
+                asyncio.create_task(_pub({"type": "state_change", "state": "listening"}))
+        except Exception as exc:
+            logger.warning("livekit_data_recv_error", error=str(exc))
+
+    # ── Session collision guard ───────────────────────────────────────────────────
+    room_key = ctx.room.name
+    if room_key in _active_sessions:
+        old_session = _active_sessions.pop(room_key)
+        logger.warning("livekit_session_collision_detected",
+                       room=room_key,
+                       detail="closing existing session before starting new one")
+        try:
+            await old_session.aclose()
+        except Exception as close_err:
+            logger.warning("livekit_old_session_close_failed", error=str(close_err))
+
+    _active_sessions[room_key] = session
+
+    logger.info("livekit_session_start_called", room=ctx.room.name,
+                local_participant=ctx.room.local_participant.identity)
+    try:
+        await session.start(
+            Agent(instructions=_build_agent_instructions()),
+            room=ctx.room,
+            room_options=RoomOptions(),
+        )
+    finally:
+        _active_sessions.pop(room_key, None)
+
+    logger.info("livekit_agent_session_started", room=ctx.room.name,
+                audio_output=str(session.output.audio.__class__.__name__ if session.output and session.output.audio else "None"))
 
 
 def _build_agent_instructions() -> str:

@@ -23,6 +23,32 @@ import structlog
 logger = structlog.get_logger()
 
 
+# ── Score normaliser ──────────────────────────────────────────────────────
+# LLMs sometimes return qualitative labels ("high", "low", "medium") instead
+# of numeric scores.  Map these to sensible floats so DB writes never crash.
+
+_LABEL_TO_SCORE: dict[str, float] = {
+    "very high": 0.9, "high": 0.75,
+    "medium": 0.5,    "moderate": 0.5,
+    "low": 0.25,      "very low": 0.1,
+    "none": 0.0,      "n/a": 0.0,
+}
+
+def _to_float(val: Any, default: float = 0.0) -> float:
+    """Convert val to float, handling string labels gracefully."""
+    if val is None:
+        return default
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).strip().lower()
+    if s in _LABEL_TO_SCORE:
+        return _LABEL_TO_SCORE[s]
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return default
+
+
 # ── 1. START RUN ─────────────────────────────────────────────────────────
 
 def start_run(
@@ -111,11 +137,11 @@ def persist_intel_findings(
                     why_it_matters=f.get("why_it_matters"),
                     evidence=f.get("evidence_snippet"),
                     confidence=f.get("confidence", "MEDIUM"),
-                    impact_score=float(f.get("impact_score") or 0.0),
-                    relevance=float(f.get("relevance") or 0.0),
-                    novelty=float(f.get("novelty") or 0.0),
-                    credibility=float(f.get("credibility") or 0.0),
-                    actionability=float(f.get("actionability") or 0.0),
+                    impact_score=_to_float(f.get("impact_score")),
+                    relevance=_to_float(f.get("relevance")),
+                    novelty=_to_float(f.get("novelty")),
+                    credibility=_to_float(f.get("credibility")),
+                    actionability=_to_float(f.get("actionability")),
                     rank=f.get("rank"),
                     topic_cluster=f.get("category"),
                     needs_verification=bool(f.get("needs_verification", False)),
@@ -173,7 +199,7 @@ def update_scores(
         fid = f.get("id")
         if fid:
             score_map[fid] = {
-                "impact_score": float(f.get("impact_score") or 0.0),
+                "impact_score": _to_float(f.get("impact_score")),
                 "rank": int(f.get("rank") or 0),
             }
 
