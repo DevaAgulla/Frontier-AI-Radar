@@ -22,7 +22,7 @@ Fallback pattern (always kept for safety):
         output = parse_json_output(final_text)
 """
 
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -175,7 +175,7 @@ class DigestOutput(BaseModel):
 
     executive_summary: str = Field(description="Clean HTML paragraphs executive summary with top 7 items — NO markdown")
     sections: DigestSectionsOutput = Field(default_factory=DigestSectionsOutput)
-    top_findings: List[Dict[str, Any]] = Field(
+    top_findings: List[FindingOutput] = Field(
         default_factory=list,
         description="Top 7 finding objects (subset of ranked_findings)",
     )

@@ -29,7 +29,7 @@ LEADERBOARD_TASKS = [              # Task columns of interest (match dataset col
 ]
 
 # Trending models — via HfApi.list_models(sort=...)
-TRENDING_SORT = "trending_score"   # or "downloads", "likes", "last_modified", "created_at"
+TRENDING_SORT = "likes"            # valid HfApi.list_models sort values: "downloads", "likes", "last_modified", "created_at"
 TRENDING_LIMIT = 30
 TRENDING_DAILY_LIMIT = 15          # For "daily" trending feel, use smaller limit
 

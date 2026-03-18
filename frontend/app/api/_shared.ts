@@ -40,6 +40,7 @@ export function buildRunFromBackend(item: any): Run {
     started_at: item.started_at ?? "",
     finished_at: item.finished_at ?? undefined,
     mode: item.mode ?? "full",
+    period: item.period ?? "daily",
     source_url: sourceUrl,
     agent_ids: uiAgentIds,
     recipient_emails: Array.isArray(item.recipient_emails) ? item.recipient_emails : [],

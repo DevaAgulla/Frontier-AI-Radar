@@ -48,6 +48,7 @@ def run_digest_pipeline(
     run_db_id: int,
     mode: str = "full",
     since_days: int = 1,
+    period: str = "daily",
     email_recipients: Optional[list[str]] = None,
     custom_urls: Optional[list[str]] = None,
     url_mode: str = "default",
@@ -77,6 +78,7 @@ def run_digest_pipeline(
         initial_state = create_initial_state(
             run_mode=mode,
             since_days=since_days,
+            report_type=period,
             extraction_db_id=extraction_db_id,
             run_db_id=run_db_id,
             email_recipients=email_recipients or [],

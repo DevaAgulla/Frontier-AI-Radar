@@ -8,7 +8,7 @@ import { useToast } from "../context/ToastContext";
 import { api } from "@/lib/api";
 import type { Run, AgentId } from "@/lib/types";
 
-type SortKey = "id" | "date" | "status" | "url" | "recipients";
+type SortKey = "id" | "date" | "status" | "period" | "url" | "recipients";
 type SortDir = "asc" | "desc";
 
 const AGENT_LABELS: Record<AgentId, string> = {
@@ -135,6 +135,7 @@ export default function RunsPage() {
       if (sortBy === "id") cmp = a.id.localeCompare(b.id);
       else if (sortBy === "date") cmp = a.started_at.localeCompare(b.started_at);
       else if (sortBy === "status") cmp = a.status.localeCompare(b.status);
+      else if (sortBy === "period") cmp = (a.period ?? "daily").localeCompare(b.period ?? "daily");
       else if (sortBy === "url") cmp = (a.source_url ?? "").localeCompare(b.source_url ?? "");
       else if (sortBy === "recipients") cmp = visibleRecipients(a.recipient_emails).length - visibleRecipients(b.recipient_emails).length;
       return sortDir === "asc" ? cmp : -cmp;
@@ -226,6 +227,12 @@ export default function RunsPage() {
                     </button>
                   </th>
                   <th className="text-left py-3.5 px-4 text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] border-r border-[var(--border)] last:border-r-0">
+                    <button type="button" onClick={() => handleSort("period")} title="Sort by period" className="inline-flex items-center cursor-pointer hover:text-[var(--primary)] transition-colors">
+                      Period
+                      <SortIcon sortDir={sortBy === "period" ? sortDir : null} active={sortBy === "period"} />
+                    </button>
+                  </th>
+                  <th className="text-left py-3.5 px-4 text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] border-r border-[var(--border)] last:border-r-0">
                     <button type="button" onClick={() => handleSort("url")} title="Sort by URL" className="inline-flex items-center cursor-pointer hover:text-[var(--primary)] transition-colors">
                       URL
                       <SortIcon sortDir={sortBy === "url" ? sortDir : null} active={sortBy === "url"} />
@@ -244,7 +251,7 @@ export default function RunsPage() {
               <tbody>
                 {sortedRuns.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-sm text-[var(--text-secondary)] border-b border-[var(--border)]">
+                    <td colSpan={8} className="py-12 text-center text-sm text-[var(--text-secondary)] border-b border-[var(--border)]">
                       No runs found for the selected date range.
                     </td>
                   </tr>
@@ -258,6 +265,11 @@ export default function RunsPage() {
                       <td className="py-3.5 px-4 text-sm text-[var(--text-secondary)] border-r border-[var(--border)]">{formatRunDate(run.started_at)} · {formatRunTime(run.started_at)}</td>
                       <td className="py-3.5 px-4 border-r border-[var(--border)]">
                         <StatusBadge status={run.status} />
+                      </td>
+                      <td className="py-3.5 px-4 border-r border-[var(--border)]">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize" style={{ background: "var(--primary-light)", color: "var(--primary)" }}>
+                          {run.period ?? "daily"}
+                        </span>
                       </td>
                       <td className="py-3.5 px-4 text-sm text-[var(--text-secondary)] truncate max-w-[140px] border-r border-[var(--border)]" title={run.source_url ?? ""}>{run.source_url ?? run.mode ?? "—"}</td>
                       <td className="py-3.5 px-4 text-sm text-[var(--text-secondary)] border-r border-[var(--border)]">{visibleRecipients(run.recipient_emails).length} email{visibleRecipients(run.recipient_emails).length === 1 ? "" : "s"}</td>

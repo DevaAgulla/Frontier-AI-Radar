@@ -76,6 +76,7 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: Optional[str] = Field(default=None, env="REDIS_URL")
+    enable_cache: bool = Field(default=True, env="ENABLE_CACHE")
 
     # Voice Agent — ElevenLabs (TTS)
     enable_elevenlabs: bool = Field(default=True, env="ENABLE_ELEVENLABS")

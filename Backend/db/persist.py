@@ -16,6 +16,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+_SCORE_MAP = {"high": 0.9, "medium": 0.5, "low": 0.2}
+
+def _to_float(val, default: float = 0.0) -> float:
+    """Convert a score value to float. Handles numeric strings and 'high'/'medium'/'low' labels."""
+    if val is None:
+        return default
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).strip().lower()
+    if s in _SCORE_MAP:
+        return _SCORE_MAP[s]
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return default
+
 from db.connection import get_session, init_db
 from db.models import Extraction, Finding, Run, Resource, Competitor, RunAudioPreset, RunAssetCache
 import structlog
@@ -74,7 +90,7 @@ def start_run(
         extraction = Extraction(
             publication_date=datetime.now(timezone.utc),
             mode=mode,
-            metadata_=json.dumps({}),
+            metadata_=json.dumps(config or {}),
         )
         session.add(extraction)
         session.flush()  # get extraction.id before commit
