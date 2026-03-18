@@ -658,6 +658,7 @@ async def run(req: RunRequest):
         state = await run_radar(
             mode=req.mode,
             since_days=req.since_days,
+            report_type=req.period,
             config=run_config,
             trigger=trigger,
             user_id=resolved_user_id,
@@ -714,6 +715,7 @@ async def run_async(req: RunRequest):
         "url_mode": req.url_mode,
         "custom_urls": req.urls,
         "email_recipients": email_recipients,
+        "period": req.period,
     }
 
     # Create DB rows first so the frontend has a run_id to poll immediately
@@ -721,6 +723,7 @@ async def run_async(req: RunRequest):
     initial_state = prepare_radar_run(
         mode=req.mode,
         since_days=req.since_days,
+        report_type=req.period,
         config=run_config,
         trigger=trigger,
         user_id=resolved_user_id,
@@ -743,6 +746,7 @@ async def run_async(req: RunRequest):
             run_db_id=run_db_id,
             mode=req.mode,
             since_days=req.since_days,
+            period=req.period,
             email_recipients=email_recipients,
             custom_urls=req.urls or [],
             url_mode=req.url_mode,

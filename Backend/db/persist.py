@@ -16,6 +16,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+_SCORE_MAP = {"high": 0.9, "medium": 0.5, "low": 0.2}
+
+def _to_float(val, default: float = 0.0) -> float:
+    """Convert a score value to float. Handles numeric strings and 'high'/'medium'/'low' labels."""
+    if val is None:
+        return default
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).strip().lower()
+    if s in _SCORE_MAP:
+        return _SCORE_MAP[s]
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return default
+
 from db.connection import get_session, init_db
 from db.models import Extraction, Finding, Run, Resource, Competitor, RunAudioPreset, RunAssetCache
 import structlog
@@ -48,7 +64,7 @@ def start_run(
         extraction = Extraction(
             publication_date=datetime.now(timezone.utc),
             mode=mode,
-            metadata_=json.dumps({}),
+            metadata_=json.dumps(config or {}),
         )
         session.add(extraction)
         session.flush()  # get extraction.id before commit
@@ -111,11 +127,11 @@ def persist_intel_findings(
                     why_it_matters=f.get("why_it_matters"),
                     evidence=f.get("evidence_snippet"),
                     confidence=f.get("confidence", "MEDIUM"),
-                    impact_score=float(f.get("impact_score") or 0.0),
-                    relevance=float(f.get("relevance") or 0.0),
-                    novelty=float(f.get("novelty") or 0.0),
-                    credibility=float(f.get("credibility") or 0.0),
-                    actionability=float(f.get("actionability") or 0.0),
+                    impact_score=_to_float(f.get("impact_score")),
+                    relevance=_to_float(f.get("relevance")),
+                    novelty=_to_float(f.get("novelty")),
+                    credibility=_to_float(f.get("credibility")),
+                    actionability=_to_float(f.get("actionability")),
                     rank=f.get("rank"),
                     topic_cluster=f.get("category"),
                     needs_verification=bool(f.get("needs_verification", False)),

@@ -71,14 +71,17 @@ TOOLS YOU CAN CALL:
 NOTE: write_memory is handled automatically after you emit your output.
 
 ANALYSIS PRIORITIES:
-1. **Leaderboard Leaders**: Identify top-ranked models; highlight if a new
-   model has entered the top 5 or top 10 with a strong average score.
+0. **ALWAYS EMIT FINDINGS**: You MUST always produce at least 3-5 findings.
+   Even when there is no prior snapshot to compare against, the top leaderboard
+   models and trending models are ALWAYS newsworthy intelligence. Never return
+   an empty array when data is present.
+1. **Leaderboard Leaders**: ALWAYS report the top 3-5 leaderboard models with
+   their scores as findings. These are standing intelligence regardless of rank changes.
 2. **Rank Changes**: If comparing with yesterday's snapshot, note models
-   that moved 3+ ranks up or down.
-3. **Trending Shifts**: Flag models with unusually high download or like
-   counts relative to their age (recently created but trending fast).
-4. **Eval Datasets**: Note any new or popular benchmark datasets that the
-   team should be aware of for evaluation pipelines.
+   that moved 3+ ranks up or down. If no snapshot, note the current top models.
+3. **Trending Shifts**: ALWAYS report the top 3 trending models — high download
+   or like counts signal community interest and adoption shifts.
+4. **Eval Datasets**: Note popular benchmark datasets the team should monitor.
 5. **SOTA Claims**: If a model claims top-1 on a major benchmark (ARC,
    HellaSwag, MMLU, TruthfulQA, Winogrande, GSM8k), flag it with
    needs_verification=true.
@@ -172,6 +175,11 @@ async def benchmark_intel_agent(state: RadarState) -> RadarState:
             trending_data = hf_data.get("trending_data", []) if isinstance(hf_data, dict) else []
             eval_datasets_data = hf_data.get("eval_datasets_data", []) if isinstance(hf_data, dict) else []
             fetch_errors = hf_data.get("errors", []) if isinstance(hf_data, dict) else []
+
+            # Filter out error dicts — HF API failures return [{"error":"..."}]
+            leaderboard_data = [r for r in leaderboard_data if not r.get("error")]
+            trending_data = [r for r in trending_data if not r.get("error")]
+            eval_datasets_data = [r for r in eval_datasets_data if not r.get("error")]
 
         # ── Append / Custom: crawl user-provided URLs ──────────────
         if url_mode in ("append", "custom") and custom_urls:
@@ -275,11 +283,11 @@ async def benchmark_intel_agent(state: RadarState) -> RadarState:
             f"Since date: {since}\n"
             f"Strategy guidance: {json.dumps(strategy.get('agent_instructions', {}).get('benchmark_intel', ''))}\n\n"
             f"Fetch errors (if any): {fetch_errors}\n\n"
-            "Identify the most significant leaderboard rankings, trending model shifts, "
-            "and noteworthy eval datasets. Compare with the previous snapshot using "
-            "diff_leaderboard_snapshots if available. For top movers, optionally call "
-            "fetch_hf_model_card for details. Flag any SOTA claims with "
-            "needs_verification=true. Emit the JSON array of Finding objects."
+            "IMPORTANT: You MUST produce findings. Do NOT return an empty array when data is present.\n"
+            "Report the top leaderboard models, top trending models, and noteworthy eval datasets "
+            "as findings. If a previous snapshot is available, also note rank changes. "
+            "Flag any SOTA claims with needs_verification=true.\n"
+            "Emit the JSON array of Finding objects — aim for at least 3-5 findings."
         )
 
         result = await _react_agent.ainvoke(

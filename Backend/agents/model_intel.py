@@ -69,6 +69,12 @@ REASONING BEFORE ACTING:
 4. If ANY benchmark claim or SOTA claim is found -> call flag_verification_task.
 5. Emit findings as a JSON array.
 
+CRITICAL: You MUST produce findings. Do NOT return an empty array when release data is present.
+Both NEW model releases AND UPDATES to existing models are reportable intelligence:
+- A new version of an existing model (GPT-4o update, Gemini 1.5 Pro update) is newsworthy.
+- Context window increases, pricing changes, new modalities added are all significant.
+- If a model was recently modified (lastModified in window), report it.
+
 EXTRACTION FOCUS:
 - Model name and version
 - Context window size
@@ -152,9 +158,10 @@ async def model_intel_agent(state: RadarState) -> RadarState:
         releases = []
 
         # ── Default / Append: fetch from standard 12+ provider sources ─
+        since_days = state.get("since_days", 7)
         if url_mode in ("default", "append"):
             releases = await fetch_foundation_model_releases_tool.ainvoke(
-                {"target_date": "", "since_days": 7}  # look back 7 days; delta detection removes already-seen
+                {"target_date": "", "since_days": since_days}
             )
             if not isinstance(releases, list):
                 releases = []
@@ -215,7 +222,11 @@ async def model_intel_agent(state: RadarState) -> RadarState:
                 "Model Intel: delta detection — filtered %d already-seen releases, %d new",
                 delta_filtered, len(new_releases),
             )
+        using_fallback = len(new_releases) == 0
         releases = new_releases if new_releases else releases  # fall back to all if everything is "seen"
+        if using_fallback and releases:
+            logger.info("Model Intel: all releases were seen — using fallback mode, ignoring seen filter for LLM")
+            seen_model_keys = set()  # Don't let the LLM skip everything in fallback mode
 
         # If no releases found, still produce a minimal output
         if not releases or (isinstance(releases, list) and len(releases) == 0):
@@ -250,16 +261,24 @@ async def model_intel_agent(state: RadarState) -> RadarState:
                 "source": r.get("source"),
             })
 
+        fallback_note = (
+            "NOTE: Delta detection found no new releases vs previous snapshot — "
+            "reviewing ALL recent activity for newsworthy updates.\n"
+        ) if using_fallback else ""
+
         user_prompt = (
             f"Analyze these {len(releases_for_prompt)} foundation model releases "
-            f"detected today from provider sources (already filtered to NEW releases only):\n\n"
+            f"detected from provider sources:\n\n"
+            f"{fallback_note}"
             f"--- RELEASES JSON ---\n{json.dumps(releases_for_prompt, indent=2)}\n--- END ---\n\n"
-            f"Previously seen models (already reported): {json.dumps(list(seen_model_keys)[:50])}\n"
+            f"Previously seen models (skip if truly old news): {json.dumps(list(seen_model_keys)[:50])}\n"
             f"Since date: {since}\n"
             f"Strategy guidance: {json.dumps(strategy.get('agent_instructions', {}).get('model_intel', ''))}\n\n"
             "IMPORTANT: If ANY provider claims SOTA on a benchmark, you MUST call "
             "flag_verification_task with the claim details.\n\n"
-            "Analyze the significance of each release. Identify genuinely new models vs updates. "
+"IMPORTANT: You MUST produce findings — do NOT return an empty array when releases are present.\n"
+            "Report both new model releases AND significant updates to existing models. "
+            "Pick the most newsworthy items (aim for 3-8 findings). "
             "Flag SOTA claims. Emit the JSON array of Finding objects."
         )
 
@@ -302,13 +321,16 @@ async def model_intel_agent(state: RadarState) -> RadarState:
             "key": "last_model_intel_findings",
             "value": json.dumps(findings),
         })
+        # Merge new models into existing snapshot instead of overwriting,
+        # so delta detection doesn't filter everything on subsequent runs.
+        updated_snapshots = {**prev_snapshots, **{
+            r.get("model_name", ""): r.get("release_date", "")
+            for r in releases if r.get("model_name")
+        }}
         await write_memory.ainvoke({
             "type": "long_term",
             "key": "model_provider_snapshots",
-            "value": json.dumps({
-                r.get("model_name", ""): r.get("release_date", "")
-                for r in releases
-            }),
+            "value": json.dumps(updated_snapshots),
         })
 
         logger.info(

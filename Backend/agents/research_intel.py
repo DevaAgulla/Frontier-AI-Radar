@@ -241,11 +241,18 @@ async def research_intel_agent(state: RadarState) -> RadarState:
             if composite_id not in seen_ids and paper_id:
                 new_papers.append(p)
 
+        using_fallback = len(new_papers) == 0 and len(all_papers) > 0
+        if using_fallback:
+            logger.info("Research Agent: all papers already seen — using fallback mode with all papers")
+            new_papers = all_papers
+            seen_ids = set()  # Don't let LLM skip everything in fallback mode
+
         logger.info(
             "Research Agent: Phase 1 complete — filtered",
             total_papers=len(all_papers),
             already_seen=len(all_papers) - len(new_papers),
             new_papers=len(new_papers),
+            fallback=using_fallback,
         )
 
         # ── PHASE 2-3: AGENTIC (LangGraph ReAct loop) ─────────────
@@ -310,13 +317,20 @@ async def research_intel_agent(state: RadarState) -> RadarState:
                 "categories": p.get("categories"),  # arXiv categories
             })
 
+        fallback_note = (
+            "NOTE: Delta detection found no new papers vs previous snapshot — "
+            "reviewing ALL recent papers. Pick the most relevant ones regardless.\n"
+        ) if using_fallback else ""
+
         user_prompt = (
             f"Date range: papers since {since_date}\n"
             f"Sources crawled: {list(crawl_result.get('sources', {}).keys()) if isinstance(crawl_result, dict) else []}\n"
-            f"Total new papers to evaluate: {len(new_papers)}\n"
+            f"Total papers to evaluate: {len(new_papers)}\n"
             f"Strategy focus: {focus_keywords}\n\n"
+            f"{fallback_note}"
             f"Papers:\n{json.dumps(papers_for_prompt, indent=2, ensure_ascii=False)}\n\n"
-            "Score each paper against the relevance rubric. "
+            "IMPORTANT: You MUST produce findings — do NOT return an empty array when papers are present.\n"
+            "Score each paper against the relevance rubric. Aim for 3-8 findings. "
             "If fewer than 5 pass the 0.4 threshold, call search_arxiv or search_semantic_scholar for more. "
             "For any paper > 0.8, call crawl_page to get the full page content. "
             "When done, emit the JSON array of Finding objects."
@@ -370,10 +384,13 @@ async def research_intel_agent(state: RadarState) -> RadarState:
             "key": "last_research_intel_findings",
             "value": json.dumps(validated),
         })
+        # Cap at 500 most recent IDs to prevent unbounded growth that would
+        # filter out all papers on future runs.
+        capped_seen_ids = list(set(new_seen_ids))[-500:]
         await write_memory.ainvoke({
             "type": "long_term",
             "key": "seen_paper_ids",
-            "value": json.dumps(list(set(new_seen_ids))),
+            "value": json.dumps(capped_seen_ids),
         })
 
         logger.info("Research Agent: Phase 4 — writing findings", count=len(validated))

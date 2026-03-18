@@ -38,6 +38,7 @@ def _configure_logging(debug: bool = False) -> None:
 def create_initial_state(
     run_mode: str = "full",
     since_days: int = 1,
+    report_type: str = "daily",
     config: Optional[Dict[str, Any]] = None,
     extraction_db_id: int = 0,
     run_db_id: int = 0,
@@ -52,6 +53,8 @@ def create_initial_state(
     return {
         "run_id": run_id,
         "run_mode": run_mode,
+        "report_type": report_type,
+        "since_days": since_days,
         "selected_agents": [],
         "mission_goal": "",
         "strategy_plan": {},
@@ -198,6 +201,7 @@ def create_chat_initial_state(
 async def run_radar(
     mode: str = "full",
     since_days: int = 1,
+    report_type: str = "daily",
     config: Optional[Dict[str, Any]] = None,
     trigger: str = "job",
     user_id: Optional[int] = None,
@@ -224,12 +228,13 @@ async def run_radar(
         Final state after pipeline execution
     """
     logger.info("Starting radar run", mode=mode, since_days=since_days,
-                user_id=user_id, url_mode=url_mode,
+                report_type=report_type, user_id=user_id, url_mode=url_mode,
                 custom_urls_count=len(custom_urls or []))
 
     initial_state = prepare_radar_run(
         mode=mode,
         since_days=since_days,
+        report_type=report_type,
         config=config,
         trigger=trigger,
         user_id=user_id,
@@ -243,6 +248,7 @@ async def run_radar(
 def prepare_radar_run(
     mode: str = "full",
     since_days: int = 1,
+    report_type: str = "daily",
     config: Optional[Dict[str, Any]] = None,
     trigger: str = "job",
     user_id: Optional[int] = None,
@@ -260,6 +266,7 @@ def prepare_radar_run(
     return create_initial_state(
         run_mode=mode,
         since_days=since_days,
+        report_type=report_type,
         config=config,
         extraction_db_id=extraction_db_id,
         run_db_id=run_db_id,

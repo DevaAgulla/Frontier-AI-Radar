@@ -68,6 +68,8 @@ class RadarState(TypedDict):
     # Run metadata
     run_id: str
     run_mode: str  # "full" | "competitor" | "research" | "model" | "benchmark"
+    report_type: str  # "daily" | "weekly" | "monthly"
+    since_days: int   # number of days to look back (1=daily, 7=weekly, 30=monthly)
     selected_agents: list[str]
     mission_goal: str
     strategy_plan: dict

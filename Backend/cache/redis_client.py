@@ -41,6 +41,10 @@ def _get_client():
         return _client
     try:
         from config.settings import settings
+        if not settings.enable_cache:
+            _unavailable = True
+            logger.info("Redis cache disabled via ENABLE_CACHE=false — running in DB-only mode")
+            return None
         if not settings.redis_url:
             _unavailable = True
             return None

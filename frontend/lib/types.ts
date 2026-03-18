@@ -54,6 +54,7 @@ export interface Run {
   started_at: string;
   finished_at?: string;
   mode?: string;
+  period?: string;  // "daily" | "weekly" | "monthly"
   source_url?: string;
   agent_ids: AgentId[];
   recipient_emails: string[];
@@ -84,6 +85,7 @@ export interface TriggerRunPayload {
   urls?: string[];
   url_mode?: "default" | "append" | "custom";
   since_days?: number;
+  period?: string;  // "daily" | "weekly" | "monthly"
   async_run?: boolean;
 }
 
