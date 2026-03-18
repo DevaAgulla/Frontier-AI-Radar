@@ -118,6 +118,7 @@ async def lifespan(app: FastAPI):
                     ws_url         = _lk_url,
                     api_key        = _lk_key,
                     api_secret     = _lk_secret,
+                    agent_name     = "radar-agent",
                 )
             )
             _livekit_task = asyncio.create_task(_lk_worker.run(devmode=True))
@@ -2412,6 +2413,9 @@ async def get_livekit_token(
                     _lk_server.CreateRoomRequest(
                         name=room_name,
                         metadata=room_metadata,
+                        # Dispatch our worker to this room when a participant joins.
+                        # agent_name must match the WorkerOptions(agent_name=...) above.
+                        agents=[_lk_server.RoomAgentDispatch(agent_name="radar-agent")],
                     )
                 )
             except Exception:

@@ -45,12 +45,14 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-# ── Register LiveKit plugins on the main thread (required by livekit-agents v1.x)
-try:
-    from livekit.agents import AgentSession, Agent, RoomInputOptions
-    from livekit.plugins import deepgram, elevenlabs
-except ImportError:
-    pass  # will be caught at runtime in entrypoint if missing
+# ── LiveKit core imports (always available if livekit-agents is installed) ──────
+from livekit.agents import AgentSession, Agent
+from livekit.agents.voice.room_io import RoomOptions
+
+# ── Plugin imports — done at module level so the IPC worker subprocess has them
+# available. If these fail the worker logs a clear ImportError rather than a
+# silent NameError at runtime.
+from livekit.plugins import deepgram, elevenlabs
 
 # ── Voice preset map (mirrors existing VOICE_PRESETS in seed + tts_stream.py) ──
 
@@ -155,9 +157,18 @@ def build_radar_llm_plugin(run_id: int, session_id: str, user_id: Optional[int] 
 
     Returns a livekit.agents.llm.LLM subclass instance.
     """
+    # ── Per-session debounce lock ─────────────────────────────────────────────
+    # Deepgram can fire two SpeechFinalEvents for a single natural-speech
+    # utterance that has a mid-sentence pause (e.g. "about [pause] the update").
+    # Both events cause AgentSession to call llm.chat() → _run() → LangGraph
+    # twice, producing duplicate responses.
+    # This lock prevents concurrent _run() calls for the same session. If a
+    # turn is already in progress when a new chat() arrives, the new _run()
+    # will see the lock and drop the fragment as a duplicate.
+    _turn_lock = asyncio.Lock()
     try:
         from livekit.agents import llm as lk_llm
-        from livekit.agents.llm import ChatContext, ChatMessage
+        from livekit.agents.llm import ChatContext
     except ImportError as exc:
         raise ImportError(
             "livekit-agents not installed. "
@@ -193,6 +204,7 @@ def build_radar_llm_plugin(run_id: int, session_id: str, user_id: Optional[int] 
                 user_id=user_id,
                 room=room,
                 persona_prompt=persona_prompt,
+                turn_lock=_turn_lock,
             )
 
     class RadarLLMStream(lk_llm.LLMStream):
@@ -209,6 +221,7 @@ def build_radar_llm_plugin(run_id: int, session_id: str, user_id: Optional[int] 
             user_id: Optional[int],
             room=None,
             persona_prompt: Optional[str] = None,
+            turn_lock: asyncio.Lock,
         ):
             super().__init__(llm=RadarLLMPlugin(), chat_ctx=chat_ctx, tools=tools, conn_options=conn_options)
             self._run_id        = run_id
@@ -216,16 +229,10 @@ def build_radar_llm_plugin(run_id: int, session_id: str, user_id: Optional[int] 
             self._user_id       = user_id
             self._room          = room
             self._persona_prompt = persona_prompt
+            self._turn_lock     = turn_lock
 
         async def _run(self) -> None:
             """Produce LLM chunks. Called by LiveKit's internal loop."""
-            from agents.chat_agent import VOICE_SYSTEM_PROMPT
-            from core.context_manager import build_messages, maybe_summarise
-            from db.chat import save_message
-            from pipeline.runner import create_chat_initial_state
-            import livekit.agents.llm as lk_llm
-            import uuid
-
             # Helper: send a data packet to the room so the frontend can update UI
             async def _pub(data: dict) -> None:
                 if not self._room:
@@ -259,6 +266,29 @@ def build_radar_llm_plugin(run_id: int, session_id: str, user_id: Optional[int] 
                 logger.info("livekit_utterance_fragment_dropped",
                             text=user_text, run_id=self._run_id)
                 return
+
+            # ── Debounce: drop duplicate turns from split utterances.
+            # Deepgram can fire two SpeechFinalEvents for one natural sentence that
+            # has a mid-sentence pause (e.g. "about [pause] the update"). Both events
+            # cause AgentSession to call _run() concurrently. The lock ensures only
+            # ONE turn runs at a time; the second call sees the lock is taken and drops
+            # itself as a fragment rather than issuing a duplicate LLM call.
+            if self._turn_lock.locked():
+                logger.info("livekit_utterance_fragment_dropped_busy",
+                            text=user_text[:60], run_id=self._run_id)
+                return
+
+            async with self._turn_lock:
+                await self._run_locked(user_text, _pub)
+
+        async def _run_locked(self, user_text: str, _pub) -> None:
+            """Inner body of _run — executes only when the per-session turn lock is held."""
+            from agents.chat_agent import VOICE_SYSTEM_PROMPT
+            from core.context_manager import build_messages, maybe_summarise
+            from db.chat import save_message
+            from pipeline.runner import create_chat_initial_state
+            import livekit.agents.llm as lk_llm
+            import uuid
 
             logger.info("livekit_llm_turn", run_id=self._run_id, session=self._session_id,
                         chars=len(user_text))
@@ -363,6 +393,13 @@ async def entrypoint(ctx):
     Room name convention: "radar-{run_id}" or "radar-{run_id}-{user_id}"
     Room/participant metadata: voice preset name (e.g. "rachel_professional")
     """
+    # Connect to the room and subscribe to audio tracks.
+    # This MUST be called before accessing ctx.room.remote_participants or
+    # publishing local tracks. Without it, RoomIO cannot set up the audio
+    # pipeline and TTS audio will never reach the participant.
+    from livekit.agents import AutoSubscribe
+    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+
     # Parse run_id / user_id from room name ("radar-42" or "radar-42-7")
     name_parts = ctx.room.name.replace("radar-", "").split("-")
     run_id_str = name_parts[0] if name_parts else "0"
@@ -383,6 +420,12 @@ async def entrypoint(ctx):
     # Resolve credentials
     el_key       = _resolve_elevenlabs_key()
     deepgram_key = _resolve_deepgram_key()
+
+    # Guard: warn loudly if ElevenLabs key is missing — this causes silent TTS
+    # failure (AgentSession swallows the 401 if no "error" listener is attached).
+    if not el_key:
+        logger.error("livekit_elevenlabs_key_missing",
+                     detail="ELEVENLABS_API_KEY not found — TTS will fail silently")
 
     # Resolve voice preset + persona from room metadata.
     #
@@ -457,27 +500,85 @@ async def entrypoint(ctx):
             language="en-US",
             punctuate=True,
             interim_results=True,
-            # ── Endpointing: wait 2500ms of silence before closing a turn.
-            # Default is ~200-300ms which splits natural mid-sentence pauses
-            # into separate turns → duplicate LLM calls → duplicate responses.
-            # 2–3 seconds lets the user finish a full thought comfortably.
-            endpointing_ms=2500,
+            # ── Endpointing: 1200ms gives room for natural mid-sentence pauses
+            # (e.g. "about [pause] the update"). 800ms was too aggressive —
+            # a 300-500ms hesitation pause split the utterance into two turns.
+            # utterance_end_ms does not exist in this plugin version — omitted.
+            endpointing_ms=1200,
+            # smart_format helps Deepgram recognise incomplete sentences and
+            # avoid premature endpointing on short unfinished phrases.
+            smart_format=True,
+            # Filler words (um/uh/ah) reset the silence timer — disable them
+            # so they don't delay endpointing or create spurious utterances.
+            filler_words=False,
         ),
         llm=radar_llm,
         tts=elevenlabs.TTS(
-            api_key=el_key,
+            # api_key: only pass if non-empty — if empty, plugin reads
+            # ELEVENLABS_API_KEY env var. Passing "" explicitly causes a
+            # 401 that is swallowed silently → text shows but no audio.
+            **({"api_key": el_key} if el_key else {}),
             voice_id=voice_id,
             model="eleven_flash_v2_5",
-            encoding="mp3_44100_128",
+            # PCM bypasses the MP3 decode step inside AudioByteStream.
+            # MP3 transcoding in the LiveKit pipeline is a common silent
+            # failure point; PCM is raw samples that feed directly into
+            # the AudioSource with no intermediate decode step.
+            encoding="pcm_16000",
+            # Lower streaming latency + smaller first TTS chunk → first
+            # audio arrives ~200ms sooner after LLM generation ends.
+            streaming_latency=3,
+            chunk_length_schedule=[50, 120, 200, 260],
         ),
+        # ── Bug 2 fix: explicit turn-detection and interruption parameters.
+        # min_endpointing_delay=0.5 — 500ms natural pause before agent replies (default).
+        # allow_interruptions=True  — user can interrupt mid-response (default).
+        # min_interruption_duration=0.5 — user must speak 500ms to count as interrupt (default).
+        # min_interruption_words=2  — user must say ≥2 words; prevents single-word
+        #   noise ("uh", "mm") from cancelling the agent's reply.
+        min_endpointing_delay=0.5,
+        allow_interruptions=True,
+        min_interruption_duration=0.5,
+        min_interruption_words=2,
     )
+
+    # ── Bug 3 fix: audio-text sync via agent_state_changed events.
+    # The LLM streams tokens ~500ms ahead of TTS audio. Without this, frontend
+    # text appears before the voice starts — they are out of sync.
+    # Solution: emit tts_started when AgentState transitions to "speaking"
+    # (i.e., when ElevenLabs audio actually begins playing in the room) and
+    # tts_stopped when it transitions away from "speaking".
+    # The frontend buffers word_token packets until tts_started fires, then
+    # flushes the buffer — text appears exactly when the voice begins.
+    @session.on("agent_state_changed")
+    def on_agent_state_changed(ev) -> None:
+        if ev.new_state == "speaking":
+            payload = json.dumps({"type": "tts_started"}).encode()
+            asyncio.create_task(
+                ctx.room.local_participant.publish_data(payload, reliable=True)
+            )
+        elif ev.old_state == "speaking":
+            payload = json.dumps({"type": "tts_stopped"}).encode()
+            asyncio.create_task(
+                ctx.room.local_participant.publish_data(payload, reliable=True)
+            )
+
+    # Surface TTS / STT / LLM errors that AgentSession would otherwise swallow.
+    # Without this, a 401 from ElevenLabs (bad API key) or a Deepgram disconnect
+    # produces no log output and the agent appears to work (text shows) but
+    # audio is completely silent.
+    @session.on("error")
+    def on_session_error(ev) -> None:
+        logger.error("livekit_agent_error",
+                     error=str(ev.error),
+                     source=type(ev.source).__name__)
 
     await session.start(
         Agent(
             instructions=_build_agent_instructions(),
         ),
         room=ctx.room,
-        room_input_options=RoomInputOptions(),
+        room_options=RoomOptions(),
     )
 
     logger.info("livekit_agent_session_started", room=ctx.room.name)

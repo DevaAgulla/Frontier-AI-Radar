@@ -40,7 +40,10 @@
       "WebFetch(domain:research.nvidia.com)",
       "WebFetch(domain:livekit.io)",
       "WebFetch(domain:docs.livekit.io)",
-      "WebFetch(domain:livekit.com)"
+      "WebFetch(domain:livekit.com)",
+      "Bash(python -c \"import inspect; from livekit.agents import AgentSession; print\\(inspect.signature\\(AgentSession.__init__\\)\\)\")",
+      "Bash(python3 -c \"import inspect; from livekit.agents import AgentSession; print\\(inspect.signature\\(AgentSession.__init__\\)\\)\")",
+      "Bash(\"/c/Users/RathlavathRameshnaya/Videos/InternalHackathon/python-venv/Scripts/python.exe\" -c \":*)"
     ]
   }
 }

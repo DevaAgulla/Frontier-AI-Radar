@@ -181,6 +181,12 @@ export default function VoicePage() {
   const audioStoreRef       = useRef<VoiceAudioStore | null>(null);
   const connectedRef        = useRef(false);                      // mirror for callbacks
   const aiSpeakingRef       = useRef(false);
+  // ── Audio-text sync refs (Bug 3) ──────────────────────────────────────────────
+  // word_token packets arrive ~500ms before TTS audio starts. We buffer them here
+  // and only flush to the transcript bubble when tts_started fires — so text
+  // appears at exactly the moment the voice begins playing.
+  const pendingTokensRef    = useRef<string>("");   // buffered LLM tokens pre-TTS
+  const ttsReadyRef         = useRef(false);        // true once TTS audio has started
 
   // ── Init audio store ──────────────────────────────────────────────────────────
   useEffect(() => { audioStoreRef.current = new VoiceAudioStore(); }, []);
@@ -430,16 +436,25 @@ export default function VoicePage() {
       case "thinking":
         aiSpeakingRef.current   = false;
         streamingIdxRef.current = -1;
+        // Reset audio-text sync state for the new turn
+        ttsReadyRef.current     = false;
+        pendingTokensRef.current = "";
         setVoiceState("thinking");
         setStatusLabel("Thinking…");
         break;
 
       // ── word_token: each LLM output token forwarded for real-time transcript sync.
-      // Fires as the LLM generates tokens (~500ms before TTS audio) so the text
-      // appears to stream in sync with the voice.
+      // Bug 3 fix: tokens arrive ~500ms before TTS audio. We buffer them until
+      // tts_started fires, then flush — so text appears when voice begins, not before.
       case "word_token": {
         const token = msg.text || "";
         if (!token) break;
+        if (!ttsReadyRef.current) {
+          // TTS not started yet — buffer the token, don't render
+          pendingTokensRef.current += token;
+          break;
+        }
+        // TTS is playing — render immediately
         const idx = streamingIdxRef.current;
         if (idx === -1) {
           streamingIdxRef.current = -2; // sentinel
@@ -463,7 +478,56 @@ export default function VoicePage() {
         break;
       }
 
+      // ── tts_started: TTS audio has begun playing in the room.
+      // Flush the buffered LLM tokens into the transcript bubble now — this ensures
+      // text appears at exactly the moment the voice starts.
+      case "tts_started": {
+        ttsReadyRef.current = true;
+        const buffered = pendingTokensRef.current;
+        pendingTokensRef.current = "";
+        if (buffered) {
+          streamingIdxRef.current = -2; // sentinel
+          assistantTurnRef.current += 1;
+          setTranscripts(prev => {
+            const next = [
+              ...prev,
+              { role: "assistant" as const, text: buffered, streaming: true, timestamp: new Date() },
+            ];
+            streamingIdxRef.current = next.length - 1;
+            return next;
+          });
+        }
+        setVoiceState("speaking");
+        setStatusLabel("Speaking… (speak to interrupt)");
+        break;
+      }
+
+      // ── tts_stopped: TTS audio has finished. Finalize any open streaming bubble.
+      // This complements turn_done — tts_stopped is audio-driven (fires when silence
+      // returns), turn_done is LLM-driven (fires when token generation ends).
+      case "tts_stopped": {
+        ttsReadyRef.current = false;
+        setTranscripts(prev => {
+          const next = [...prev];
+          const idx  = streamingIdxRef.current;
+          if (idx >= 0 && next[idx]?.streaming) {
+            next[idx] = { ...next[idx], streaming: false };
+          } else if (idx === -2) {
+            const lastStreaming = [...next].reverse().findIndex(t => t.role === "assistant" && t.streaming);
+            const realIdx = lastStreaming >= 0 ? next.length - 1 - lastStreaming : -1;
+            if (realIdx >= 0) next[realIdx] = { ...next[realIdx], streaming: false };
+          }
+          return next;
+        });
+        streamingIdxRef.current = -1;
+        aiSpeakingRef.current   = false;
+        setVoiceState("listening");
+        setStatusLabel("Listening…");
+        break;
+      }
+
       case "turn_done":
+        ttsReadyRef.current = false;   // reset sync state for next turn
         setTranscripts(prev => {
           const next = [...prev];
           const idx  = streamingIdxRef.current;
@@ -490,8 +554,7 @@ export default function VoicePage() {
         streamingIdxRef.current = -1;
         // Only transition to "listening" if the agent ISN'T currently speaking.
         // turn_done fires when LLM text generation finishes — TTS audio may still
-        // be playing. ActiveSpeakersChanged will transition from "speaking" →
-        // "listening" when the audio actually ends.
+        // be playing. tts_stopped will transition to "listening" when audio ends.
         if (!aiSpeakingRef.current) {
           setVoiceState("listening");
           setStatusLabel("Listening…");
