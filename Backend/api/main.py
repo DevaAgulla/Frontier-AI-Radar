@@ -16,7 +16,7 @@ import secrets
 import uvicorn
 import structlog
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query, Request, WebSocket
+from fastapi import Body, FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, field_validator
@@ -118,6 +118,7 @@ async def lifespan(app: FastAPI):
                     ws_url         = _lk_url,
                     api_key        = _lk_key,
                     api_secret     = _lk_secret,
+                    agent_name     = "radar-agent",
                 )
             )
             _livekit_task = asyncio.create_task(_lk_worker.run(devmode=True))
@@ -1211,11 +1212,16 @@ def _load_persona_prompt(persona_id: str) -> Optional[str]:
         with db_session() as sess:
             row = sess.execute(text("""
                 SELECT digest_system_prompt
-                FROM   ai_radar.persona_templates
+                FROM   ai_data_radar.persona_templates
                 WHERE  persona_type = :pid AND is_system_default = TRUE
                 LIMIT  1
             """), {"pid": persona_id}).fetchone()
-        return row[0] if row and row[0] else None
+        if row and row[0]:
+            logger.info("persona_prompt_loaded", persona_id=persona_id, chars=len(row[0]))
+            return row[0]
+        logger.warning("persona_prompt_not_found", persona_id=persona_id,
+                       note="Check ai_data_radar.persona_templates WHERE persona_type=? AND is_system_default=TRUE")
+        return None
     except Exception as exc:
         logger.warning("persona_load_failed", persona_id=persona_id, error=str(exc))
         return None
@@ -2330,7 +2336,7 @@ async def get_personas():
         with db_session() as sess:
             rows = sess.execute(text("""
                 SELECT persona_type, name, description, suggested_questions
-                FROM   ai_radar.persona_templates
+                FROM   ai_data_radar.persona_templates
                 WHERE  visibility = 'public' AND is_system_default = TRUE
                 ORDER  BY created_at ASC
             """)).fetchall()
@@ -2407,6 +2413,9 @@ async def get_livekit_token(
                     _lk_server.CreateRoomRequest(
                         name=room_name,
                         metadata=room_metadata,
+                        # Dispatch our worker to this room when a participant joins.
+                        # agent_name must match the WorkerOptions(agent_name=...) above.
+                        agents=[_lk_server.RoomAgentDispatch(agent_name="radar-agent")],
                     )
                 )
             except Exception:
@@ -2626,16 +2635,13 @@ async def get_chat_session(
     run_id:     int           = Query(...),
     user_id:    Optional[int] = Query(default=None),
     persona_id: Optional[str] = Query(default=None),
+    session_id: Optional[str] = Query(default=None),
 ):
     """
-    Get-or-create a chat session for (user_id, run_id, persona_id) and return
-    the most recent 10 messages.
+    Get-or-create a chat session and return the most recent messages.
 
-    Cache hierarchy (3 Redis checks → 0-1 DB calls on repeat visits):
-      L1  session:meta:{uid}:{rid}:{pid}              → session_id lookup  (7 d)
-      L2  chat:session:{session_id}:messages           → message list      (48 h)
-      L3  prefetch:run:{run_id}:popular                → quick prompts     (1 h)
-      L4  PostgreSQL (only on first visit per persona or after TTL expiry)
+    If session_id is provided (user clicked a specific thread), load messages
+    directly from that thread — do NOT fall back to most-recently-active session.
     """
     from cache.redis_client import (
         get_session_meta, set_session_meta,
@@ -2646,37 +2652,45 @@ async def get_chat_session(
 
     _persona_id = persona_id or ''
     messages: list = []
-    session_id: Optional[str] = None
     is_new = False
 
-    # ── L1: session_id lookup from Redis ──────────────────────────────────
-    if user_id:
-        meta = get_session_meta(user_id, run_id, _persona_id)
-        if meta:
-            session_id = meta["session_id"]
-        else:
-            # L4: DB — get or create, then write to Redis
-            session_info = get_or_create_session(run_id=run_id, user_id=user_id, persona_id=_persona_id)
-            session_id   = session_info["session_id"]
-            is_new       = session_info["is_new"]
-            set_session_meta(user_id, run_id, _persona_id, {"session_id": session_id, "is_new": is_new})
-    else:
-        # Anonymous — always create fresh (not cached)
-        session_info = get_or_create_session(run_id=run_id, user_id=None, persona_id=_persona_id)
-        session_id   = session_info["session_id"]
-        is_new       = session_info["is_new"]
-
-    # ── L2: messages from Redis (only for existing sessions) ──────────────
-    if session_id and not is_new:
+    # ── When a specific thread_id is provided, use it directly ────────────
+    if session_id:
         cached_msgs = rget_messages(session_id)
         if cached_msgs is not None:
-            messages = cached_msgs[-10:]   # keep last 10 for the UI
+            messages = cached_msgs[-50:]
         else:
-            # L4: DB — load messages, then warm Redis for next visit
-            db_messages = load_session_messages(session_id, limit=10)
+            db_messages = load_session_messages(session_id, limit=50)
             if db_messages:
                 messages = db_messages
                 rwarm_messages(session_id, db_messages)
+
+    else:
+        # ── No specific thread — get-or-create for (user, run, persona) ───
+        if user_id:
+            meta = get_session_meta(user_id, run_id, _persona_id)
+            if meta:
+                session_id = meta["session_id"]
+            else:
+                session_info = get_or_create_session(run_id=run_id, user_id=user_id, persona_id=_persona_id)
+                session_id   = session_info["session_id"]
+                is_new       = session_info["is_new"]
+                set_session_meta(user_id, run_id, _persona_id, {"session_id": session_id, "is_new": is_new})
+        else:
+            session_info = get_or_create_session(run_id=run_id, user_id=None, persona_id=_persona_id)
+            session_id   = session_info["session_id"]
+            is_new       = session_info["is_new"]
+
+        # Load messages for resolved session
+        if session_id and not is_new:
+            cached_msgs = rget_messages(session_id)
+            if cached_msgs is not None:
+                messages = cached_msgs[-10:]
+            else:
+                db_messages = load_session_messages(session_id, limit=10)
+                if db_messages:
+                    messages = db_messages
+                    rwarm_messages(session_id, db_messages)
 
     # ── L3: popular questions from Redis ──────────────────────────────────
     popular = get_popular_questions_cached(run_id)
@@ -2705,6 +2719,45 @@ async def get_chat_sessions_for_persona(
     """Return recent sessions for (user_id, persona_id), optionally scoped to run_id."""
     from db.chat import get_sessions_for_persona
     return get_sessions_for_persona(user_id, persona_id or '', run_id, limit)
+
+
+@app.get("/api/v1/chat/threads")
+async def get_chat_threads(
+    user_id:    int = Query(...),
+    persona_id: str = Query(...),
+    run_id:     int = Query(...),
+    limit:      int = Query(default=20),
+):
+    """List chat threads (sessions) for a user+persona+run, newest first."""
+    from db.chat import list_threads
+    threads = list_threads(user_id=user_id, persona_id=persona_id, run_id=run_id, limit=limit)
+    return {"threads": threads}
+
+
+@app.post("/api/v1/chat/threads/new")
+async def create_new_chat_thread(
+    run_id:     int = Body(...),
+    user_id:    int = Body(...),
+    persona_id: str = Body(...),
+):
+    """Create a new chat thread (fresh session) for this user+persona+run."""
+    from db.chat import create_new_thread
+    thread = create_new_thread(run_id=run_id, user_id=user_id, persona_id=persona_id)
+    return thread
+
+
+# ── Thread title auto-generation helper ───────────────────────────────────
+
+async def _set_thread_title(session_id: str, first_message: str) -> None:
+    """Auto-generate thread title from first user message."""
+    try:
+        from db.chat import update_thread_title
+        title = first_message.strip()[:60]
+        if len(first_message.strip()) > 60:
+            title += "\u2026"
+        update_thread_title(session_id, title)
+    except Exception:
+        pass
 
 
 # ── Production Chat Agent — LangGraph ReAct + streaming SSE ──────────────
@@ -2769,12 +2822,10 @@ async def chat_ask(req: ChatAskRequest):
         )
         session_id = info["session_id"]
 
-    # ── Load conversation context first — needed for cache bypass decision ─
-    from db.chat import get_recent_messages
-    session_ctx    = get_or_create_session(
-        run_id=run_id_int, user_id=req.user_id, persona_id=_persona_id
-    )
-    window_context = session_ctx.get("window_context")
+    # ── Load conversation context — strictly scoped to this thread ────────
+    from db.chat import get_recent_messages, get_session_info
+    session_info   = get_session_info(session_id)
+    window_context = session_info["window_context"]
     prior_messages = get_recent_messages(session_id, limit=10)
     has_history    = bool(prior_messages)
 
@@ -2783,8 +2834,10 @@ async def chat_ask(req: ChatAskRequest):
     # context. A cached "what is my name" answer from session A must never be
     # served to session B. Any question that can reference prior turns is
     # context-dependent and must go through the LLM every time.
+    # Also bypass ALL caches when a persona is selected — persona responses are
+    # personalized and must never be served from a generic (non-persona) cache entry.
     q_hash = _hash(req.message)
-    if not has_history:
+    if not has_history and not _persona_id:
         cached = get_cached_answer(run_id_int, q_hash)
         if cached:
             logger.info("chat_cache_hit", level="L1_redis", session=session_id)
@@ -2808,9 +2861,12 @@ async def chat_ask(req: ChatAskRequest):
             if req.mode == "voice":
                 return await _make_voice_response(cached["answer"], cached.get("sources", []))
             return _make_sse_response(cached["answer"], cached.get("sources", []))
-    else:
+    elif has_history:
         logger.info("chat_cache_bypass", reason="conversation_history_exists",
                     session=session_id, prior_count=len(prior_messages))
+    else:
+        logger.info("chat_cache_bypass", reason="persona_selected",
+                    session=session_id, persona_id=_persona_id)
 
     # ── L4: Unified LangGraph radar graph → chat_agent node ──────────────
     radar_graph = await _get_chat_graph()
@@ -2870,6 +2926,9 @@ async def chat_ask(req: ChatAskRequest):
             ))
             if count % 5 == 0:
                 asyncio.create_task(_summarise_and_update(session_id, count))
+            # Auto-generate thread title from first user message
+            if session_info.get("message_count", 0) == 0:
+                asyncio.create_task(_set_thread_title(session_id, req.message))
         except Exception as _e:
             logger.warning("chat_save_message_failed", error=str(_e))
         return await _make_voice_response(response_text, [])
@@ -2950,6 +3009,9 @@ async def chat_ask(req: ChatAskRequest):
                         asyncio.create_task(
                             _summarise_and_update(session_id, count)
                         )
+                    # Auto-generate thread title from first user message
+                    if session_info.get("message_count", 0) == 0:
+                        asyncio.create_task(_set_thread_title(session_id, req.message))
                 except Exception as _e:
                     logger.warning("chat_save_message_failed", error=str(_e))
 
@@ -3092,9 +3154,9 @@ def _cache_digest_sections_background(run_id: int) -> None:
         with db_session() as session:
             rows = session.execute(text("""
                 SELECT f.agent_name, f.metadata_
-                FROM   ai_radar.findings f
-                JOIN   ai_radar.extractions e ON e.id = f.extraction_id
-                JOIN   ai_radar.runs r ON r.extraction_id = e.id
+                FROM   ai_data_radar.findings f
+                JOIN   ai_data_radar.extractions e ON e.id = f.extraction_id
+                JOIN   ai_data_radar.runs r ON r.extraction_id = e.id
                 WHERE  r.id = :rid
                 ORDER  BY f.agent_name, f.id
             """), {"rid": run_id}).fetchall()

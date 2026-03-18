@@ -32,7 +32,29 @@ def _build_llm():
     """
     backend = (settings.llm_backend or "gemini").lower().strip()
 
-    if backend == "openrouter" and settings.openrouter_api_key:
+    if backend == "azure_openai" and settings.azure_openai_api_key:
+        from langchain_openai import AzureChatOpenAI
+
+        logger.info("LLM backend: Azure OpenAI", deployment=settings.azure_openai_deployment)
+        return AzureChatOpenAI(
+            azure_endpoint=settings.azure_openai_endpoint,
+            api_key=settings.azure_openai_api_key,
+            azure_deployment=settings.azure_openai_deployment,
+            api_version=settings.azure_openai_api_version,
+            temperature=0.0,
+            max_tokens=4096,
+        )
+    elif backend == "openai" and settings.openai_api_key:
+        from langchain_openai import ChatOpenAI
+
+        logger.info("LLM backend: OpenAI", model=settings.openai_model)
+        return ChatOpenAI(
+            model=settings.openai_model,
+            api_key=settings.openai_api_key,
+            temperature=0.0,
+            max_tokens=4096,
+        )
+    elif backend == "openrouter" and settings.openrouter_api_key:
         from langchain_openai import ChatOpenAI
 
         logger.info(

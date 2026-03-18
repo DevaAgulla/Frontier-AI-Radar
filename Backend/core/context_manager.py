@@ -331,7 +331,7 @@ async def _get_digest_context_semantic(run_db_id: int, query: str) -> str:
                 with db_session() as sess:
                     rows = sess.execute(text("""
                         SELECT section, content
-                        FROM   ai_radar.digest_cache
+                        FROM   ai_data_radar.digest_cache
                         WHERE  run_id   = :rid
                           AND  embedding IS NOT NULL
                         ORDER  BY embedding <=> CAST(:emb AS vector)
@@ -399,25 +399,20 @@ def _load_digest_from_db(run_db_id: int) -> str:
     return ""
 
 
-def _semantic_search_with_vec(vec_str: str, user_id: int, persona_id: str, run_id: int, limit: int = 4, threshold: float = 0.75) -> list:
-    """Run pgvector semantic search with a pre-computed embedding vector string."""
+def _semantic_search_with_vec(vec_str: str, session_id: str, limit: int = 4, threshold: float = 0.75) -> list:
+    """Run pgvector semantic search — strictly scoped to this thread (session_id)."""
     from db.connection import get_session as db_session
     from sqlalchemy import text
     params: dict = {
-        "uid": user_id, "pid": persona_id, "emb": vec_str,
+        "sid": session_id, "emb": vec_str,
         "lim": limit, "thr": 1.0 - threshold,
     }
-    run_filter = "AND run_id = :rid" if run_id else ""
-    if run_id:
-        params["rid"] = run_id
     with db_session() as sess:
-        rows = sess.execute(text(f"""
+        rows = sess.execute(text("""
             SELECT role, content,
                    embedding <=> CAST(:emb AS vector) AS dist
-            FROM   ai_radar.conversation_embeddings
-            WHERE  user_id    = :uid
-              AND  persona_id = :pid
-              {run_filter}
+            FROM   ai_data_radar.conversation_embeddings
+            WHERE  session_id = CAST(:sid AS uuid)
               AND  embedding  IS NOT NULL
             ORDER  BY embedding <=> CAST(:emb AS vector)
             LIMIT  :lim

@@ -1,0 +1,849 @@
+Frontier AI Radar - Enhancements-20260317_204254-Meeting Recording 
+
+March 17, 2026, 3:13PM 
+
+24m 35s 
+
+ 
+Rathlavath, Ramesh nayak started transcription 
+
+ 
+Rathlavath, Ramesh nayak   0:04 
+Oh. 
+Go ahead. 
+You're being muted. 
+
+ 
+Harshit Rajgarhia   0:10 
+Yeah, so Livekit is totally API based. 
+
+ 
+Rathlavath, Ramesh nayak   0:14 
+Yeah, it is based on how in fact I have integrated. I I'll show that once there is a PDF will done with the PDF part. I have implemented it as well, yeah. 
+
+ 
+Harshit Rajgarhia   0:21 
+OK. 
+
+ 
+Devaraj, Agulla   0:22 
+Yeah, yeah, I'm sharing my screen. 
+So the updated PDF. 
+
+ 
+Harshit Rajgarhia   0:33 
+Hmm. 
+
+ 
+Devaraj, Agulla   0:33 
+My screen is visible, right? 
+
+ 
+Rathlavath, Ramesh nayak   0:35 
+Yes, yes. 
+
+ 
+Harshit Rajgarhia   0:35 
+Yes, So what is this block which calls score is 0.84? What? What does? What is the score? I mean for which entity is the score? 
+
+ 
+Devaraj, Agulla   0:38 
+Yeah. 
+
+ 
+Rathlavath, Ramesh nayak   0:47 
+So we are calculating here, right? This relevance and this, uh, novelty, credibility and this actionability. So it is. 
+
+ 
+Harshit Rajgarhia   0:53 
+So for this news, Scale AI news. 
+
+ 
+Rathlavath, Ramesh nayak   0:57 
+Sorry. 
+
+ 
+Harshit Rajgarhia   0:58 
+For this scale AI names. So I'm I'm I'm trying to understand a data structure of your PDF because first first there is a summary and then there are individual names. Is it something like that? 
+
+ 
+Rathlavath, Ramesh nayak   1:00 
+Yes, yes. 
+Yes, yes. 
+Yes. 
+So it is a section based summary. It is like for one we are agents right? For each of the agent we are giving the scores here, not the agent based the number of resources. 
+
+ 
+Harshit Rajgarhia   1:22 
+No, no. 
+Ramesh, Ramesh there I am. I know. OK, see always when you develop a product, think from a user point of view. Explain that I'm in. I I know all the technical terms which you have been through. OK, now explain that. Explain the structure of your PDF in common language. 
+
+ 
+Rathlavath, Ramesh nayak   1:26 
+Like. 
+Yes. 
+OK. 
+OK, so first, yeah, these are just the highlights, whichever we have, you go through scroll down the one, which are the highlights which since which competitors has how many new updates and then for each of this go below them. 
+
+ 
+Harshit Rajgarhia   1:54 
+Hmm. 
+Hmm. 
+
+ 
+Rathlavath, Ramesh nayak   2:03 
+Uh, the the the same one we are showing them as a. 
+
+ 
+Harshit Rajgarhia   2:05 
+Yeah, when? So first of all, when there is executive summary, why it's called today's brief? 
+Go scroll up. 
+Yeah, sorry. Yes. So what? What? So sorry, scroll up a bit and like go up in the page. 
+
+ 
+Devaraj, Agulla   2:24 
+OK. 
+
+ 
+Harshit Rajgarhia   2:25 
+What is this today's signal brief? 
+Why this heading is there? 
+
+ 
+Rathlavath, Ramesh nayak   2:33 
+Yeah. 
+Like it's a just a term that we have highlighted to what are the top things that we have today also. 
+
+ 
+Harshit Rajgarhia   2:40 
+See highlight. So see basically suppose if you buy a book and in table of content. 
+
+ 
+Rathlavath, Ramesh nayak   2:48 
+Yeah. 
+
+ 
+Harshit Rajgarhia   2:50 
+You see something else in the book and in the actual continue something else. Will it look good or will it look fishy? 
+
+ 
+Rathlavath, Ramesh nayak   2:58 
+Yeah, it won't be good. It will be efficient. 
+
+ 
+Harshit Rajgarhia   3:01 
+Yeah, so think like that, OK. 
+
+ 
+Rathlavath, Ramesh nayak   3:04 
+Mhm. 
+
+ 
+Harshit Rajgarhia   3:05 
+I'll see there there will always be a developer bias. OK. When you develop something, there will always be a developer bias, but you have to go outside that bias and build. OK, so right now the PDF is good. 
+
+ 
+Rathlavath, Ramesh nayak   3:08 
+So. 
+
+ 
+Harshit Rajgarhia   3:20 
+But it's very clumsy. OK, so let's go down. 
+
+ 
+Rathlavath, Ramesh nayak   3:24 
+Hmm. 
+
+ 
+Harshit Rajgarhia   3:28 
+See, the more the simpler you make your PDF, the higher will be your user attrition rate. If you make your things like clumsy, like dump everything not connected anywhere, then it becomes difficult, right? 
+So keep that in mind. OK, let's go down. 
+Competitor landscape 3 updates. OK, when I say 3 updates, I need to see what are those 3. 
+
+ 
+Rathlavath, Ramesh nayak   3:59 
+Yeah. 
+
+ 
+Harshit Rajgarhia   4:01 
+Have you numbered anything? 
+
+ 
+Devaraj, Agulla   4:10 
+Not numbered, but we are showing it in like order. We have to take care of that as like numbering. 
+
+ 
+Harshit Rajgarhia   4:16 
+Do. 
+Yeah. 
+So do you think there is still a big gap in your PDF? 
+
+ 
+Rathlavath, Ramesh nayak   4:28 
+Yes. 
+
+ 
+Devaraj, Agulla   4:28 
+It says. 
+
+ 
+Harshit Rajgarhia   4:28 
+Have you? So I will not give feedback. First do an internal review of your PDF. 
+
+ 
+Rathlavath, Ramesh nayak   4:38 
+OK, OK. 
+
+ 
+Harshit Rajgarhia   4:38 
+OK, no. Yeah, think like what is. Think like you have not developed a system. Think someone else has developed a system and you are the user of it. 
+OK, then you point. Then you yourself critic critic. OK, this this is just ********. I don't need this at all. OK, it's just wasting my time. 
+Yeah, sorry, Dave, there was some disturbance. Were you seeing something? 
+
+ 
+Rathlavath, Ramesh nayak   5:10 
+No, no. 
+
+ 
+Harshit Rajgarhia   5:11 
+Yeah, OK, let's move ahead. OK. I don't want to go into nitty gritties and OK, they should not. They should be there. They should not be there. A PDF cleaning is needed. OK. 
+
+ 
+Rathlavath, Ramesh nayak   5:20 
+Yeah, we'll do this. Nothing. 
+
+ 
+Harshit Rajgarhia   5:22 
+OK, great. 
+
+ 
+Rathlavath, Ramesh nayak   5:24 
+Yeah, so then, uh, can I take my screen view? 
+Yeah. 
+So. 
+Yeah, so you you wanted to listen that, right? Like after that? 
+Sorry. 
+So this was the PDF for that and. 
+This is. 
+Yeah, so. 
+This is the voice for this video for Harshit. So whatever they was, the title and content alignment of the preview is within latest, but yeah. 
+
+ 
+Harshit Rajgarhia   6:10 
+Yeah, so so just share your sound also sharing your screen not able to hear any. 
+
+ 
+Rathlavath, Ramesh nayak   6:19 
+Yeah, OK. OK. Sorry, I'm just forgetting it each. 
+
+ 
+Harshit Rajgarhia   6:24 
+Yeah, yeah, it happens with me as well. 
+Yeah. 
+
+ 
+Rathlavath, Ramesh nayak   6:30 
+Yeah, so this is the content for which we have generated that middle layer summary and then we have user converted as audio book and then this is what we have. 
+
+ 
+Harshit Rajgarhia   6:30 
+Oh. 
+
+ 
+Rathlavath, Ramesh nayak   6:41 
+Good morning. In today's intelligence briefing, three major developments demand your immediate attention. NVIDIA has unveiled their groundbreaking Vera Rubin platform, representing a significant leap in a I infrastructure capabilities. 
+Mistral A I has launched an ambitious new 109 Bay parameter model series, marking their most significant scaling achievements to date. And Scale A I has formed a strategic partnership with Universal Robots that could reshape industrial A I deployment. Let me break these down. 
+For you, first, let's examine NVIDIA's Vera Rubin platform announcement. This comprehensive AI infrastructure solution combines 7 specialized chips and five rack scale systems into a unified AI supercomputing platform. 
+The centerpiece is their new Groke 3 LPX accelerator, specifically designed to handle next generation large context window workloads. This matters because it directly addresses the growing computational demands of advanced AI models, particularly in handling extended reasoning tasks and. 
+Dependencies for your operations. This platform could significantly reduce training times and operational costs while enabling more sophisticated AI applications. Consider evaluating the platform's integration potential. 
+
+ 
+Harshit Rajgarhia   8:03 
+OK. 
+OK, this is good. Try to see if if an accent can also be. 
+
+ 
+Rathlavath, Ramesh nayak   8:16 
+OK. 
+
+ 
+Harshit Rajgarhia   8:17 
+A part of your preset. OK, because 1111 apps gives you like thousands of voices, OK. 
+
+ 
+Rathlavath, Ramesh nayak   8:19 
+OK. 
+OK, we'll see that. 
+
+ 
+Harshit Rajgarhia   8:25 
+Yeah. 
+OK, let's go to the voice mode. 
+
+ 
+Rathlavath, Ramesh nayak   8:30 
+Yeah. So in that we are just finding difficulties in terms of connecting that because from afternoon where we have decided that our personal place and that is not working, so we have. 
+In that. 
+Hi, yes, so wise one only. Can you please brief me about today's digest? 
+
+ 
+Harshit Rajgarhia   8:50 
+So this is live kit. 
+
+ 
+Rathlavath, Ramesh nayak   9:18 
+Yeah, the problem is there Harshit, it is not yet completely as yesterday's. We are facing some difficulties to integrate this. So we'll be working on this and this is how actually we have tested this. But later what I tried is that I tried to give a persona to this white screen as well. 
+So that is when the the what we say the merging between the voice agent and the text agent. Both of them are clumsy and then we are just finding some difficulties in this. 
+I'm working on this, you know. 
+
+ 
+Harshit Rajgarhia   9:51 
+No, no, first wait, wait, wait. 
+What is this solution? Is this live kit or is this the yesterday's solution only? 
+
+ 
+Rathlavath, Ramesh nayak   9:54 
+Yes. 
+Like it. Like it. Like it. 
+
+ 
+Harshit Rajgarhia   10:01 
+So what is the issue here? 
+
+ 
+Rathlavath, Ramesh nayak   10:03 
+Yeah, so when I'm tracking, right, so it is taking the instance of words here and not waiting until the user is speaking, completing his sentence and then sending the response and written in the response. Also I'm getting the LLM response, but. 
+But matching it with the audio is what I'm taking some time. That's the issue I'm facing here. 
+
+ 
+Harshit Rajgarhia   10:27 
+OK, so you need more time to fix this. 
+
+ 
+Rathlavath, Ramesh nayak   10:29 
+Yes, yes. By tomorrow I'll I'll get it done completely as you expected. So this will be done by tomorrow. 
+
+ 
+Harshit Rajgarhia   10:37 
+OK, OK. Also Abhishek told to start involving a team who can deploy this so. 
+Do you have the back end and the front end repositories? 
+
+ 
+Rathlavath, Ramesh nayak   10:53 
+Yes. 
+Yes, both of uh in that days only we have both. 
+
+ 
+Harshit Rajgarhia   11:00 
+No, no. Where? Where is the code? Is it in ADO or is it in GitHub? What? Where? 
+
+ 
+Rathlavath, Ramesh nayak   11:06 
+Right now it is in our personal GitHub because we have not been any scientific ones so. 
+
+ 
+Harshit Rajgarhia   11:11 
+Yeah, So what you do is I will give you access to a ADO project, OK? 
+
+ 
+Rathlavath, Ramesh nayak   11:15 
+Yes. 
+OK, OK. 
+
+ 
+Harshit Rajgarhia   11:21 
+OK. Let me do it as we speak. So you upload your repository in that, OK. And then I'll, I'll, I'll connect with the team. They will go ahead and start the deployment. 
+
+ 
+Rathlavath, Ramesh nayak   11:33 
+Mhm. 
+OK. 
+So is there any structure that they want to be specific in so that we can just refactor our code and? 
+
+ 
+Harshit Rajgarhia   11:44 
+I don't, I don't think so. And if there is any, they will let us know and I'll put, I'll put someone from India as well so that you all can discuss with that person and if that person is having some blocker. 
+
+ 
+Rathlavath, Ramesh nayak   11:50 
+OK. 
+OK. 
+5. 
+OK. 
+
+ 
+Harshit Rajgarhia   12:00 
+Then. 
+Yeah, let me take the screen for a couple of seconds and then I'll. 
+
+ 
+Rathlavath, Ramesh nayak   12:04 
+M. 
+Yeah. 
+
+ 
+Harshit Rajgarhia   12:09 
+Go back. 
+It. 
+
+ 
+Rathlavath, Ramesh nayak   12:43 
+It's wrong there. It's wrong there. Can you please help? 
+3rd 4th bus. Yes, yes. 
+
+ 
+Harshit Rajgarhia   12:49 
+This, this one, this one, right? 
+OK, so let me create a repository. 
+
+ 
+Rathlavath, Ramesh nayak   12:59 
+Yeah. 
+
+ 
+Harshit Rajgarhia   13:11 
+Let me call it. 
+AI names aggregator. OK, if you have a better name, let me know. 
+
+ 
+Rathlavath, Ramesh nayak   13:20 
+Hmm. 
+
+ 
+Harshit Rajgarhia   13:26 
+OK, so create a branch. Don't put in the main as of now, create a branch and put put all the code there so. 
+
+ 
+Rathlavath, Ramesh nayak   13:29 
+Mm. 
+OK. 
+
+ 
+Harshit Rajgarhia   13:41 
+Let me share the get here. 
+
+ 
+Rathlavath, Ramesh nayak   13:44 
+Both front end and back end we shall put it in this itself. 
+
+ 
+Harshit Rajgarhia   13:50 
+Yes. 
+Yeah, but if you want to do some code refracting before uploading, you can do that. OK, I mean a a bit of code cleaning and stuff and put a put a good read me OK so that they can know where the code is. And so you so you have done it in, is it in flask or fast API? 
+
+ 
+Rathlavath, Ramesh nayak   13:58 
+Yes, hold on. 
+OK. 
+And. 
+How fast will be? 
+
+ 
+Harshit Rajgarhia   14:13 
+OK, OK. So put a good read me, OK, because if you put a good read me, then obviously they will pick it up. And what is the front end? 
+
+ 
+Rathlavath, Ramesh nayak   14:22 
+Next page. 
+
+ 
+Harshit Rajgarhia   14:25 
+Riyat. 
+
+ 
+Rathlavath, Ramesh nayak   14:26 
+Next year we are on top of that next years we have this. 
+
+ 
+Harshit Rajgarhia   14:31 
+OK, OK, I haven't. I've not used the next years. Maybe it's better than. 
+
+ 
+Rathlavath, Ramesh nayak   14:34 
+Yeah, it's only but on top of that, it's service rendering guys. 
+
+ 
+Harshit Rajgarhia   14:41 
+OK, OK. So OK, so this part is somewhat clear and obviously you'll keep on developing to make it better. What is the next enhancement that we decided? 
+
+ 
+Rathlavath, Ramesh nayak   14:43 
+Yeah. 
+Yeah. 
+Yeah, I'm taking my screen. So for now I have this was talking about the persona based right. So for now see this is what for the each persona we have predefined templates here. These are the predefined questions. 
+
+ 
+Harshit Rajgarhia   15:01 
+Mhm. 
+
+ 
+Rathlavath, Ramesh nayak   15:08 
+And for each of the persona our. 
+Interactive agent will give the customized response only. But here my question is actually like when we are logging into the system, shall we give all of the personas for a single user to select or when we are logging in the system itself? 
+Can we track it based on the something like which persona you belong to so that we'll don't mess up any clumsy things here? 
+
+ 
+Harshit Rajgarhia   15:35 
+First of all, show me where the persona starts from. Go to your home and then show me where the persona starts. 
+
+ 
+Rathlavath, Ramesh nayak   15:41 
+Yes, so it is starts in the text box only in that text is there right this one. 
+
+ 
+Harshit Rajgarhia   15:47 
+Hmm. 
+
+ 
+Rathlavath, Ramesh nayak   15:48 
+So this is where it starts. 
+
+ 
+Harshit Rajgarhia   15:51 
+OK. 
+
+ 
+Rathlavath, Ramesh nayak   15:52 
+So based on which persona we select then it will be in the the it is like the system prompt is not hard coded here. We have kept it in the DB and based on the ID that we are giving for each of the persona we are taking it dynamically. 
+And then our LLM would respond appropriately. 
+
+ 
+Harshit Rajgarhia   16:12 
+OK. And is that I just not persona based? 
+
+ 
+Rathlavath, Ramesh nayak   16:17 
+Digest of which means as of now that is not persona based. It is like we are generating because until this point we have not come to a persona one thing, right? 
+
+ 
+Harshit Rajgarhia   16:30 
+So this is just interactive. 
+
+ 
+Rathlavath, Ramesh nayak   16:34 
+Yes. So see here we left. Yes, we. 
+
+ 
+Harshit Rajgarhia   16:35 
+Based on persona. So if you ask the ask ask the same question in a different persona. 
+
+ 
+Rathlavath, Ramesh nayak   16:39 
+Yes. 
+
+ 
+Harshit Rajgarhia   16:44 
+How do you see the difference in answer? 
+
+ 
+Rathlavath, Ramesh nayak   16:48 
+So right now when I say this competitive intelligence, I'll ask this to this one. 
+
+ 
+Harshit Rajgarhia   17:11 
+Mostly the same, right? 
+
+ 
+Rathlavath, Ramesh nayak   17:14 
+Yes, Harshit, we have to just customize it Harshit because this conversation also shouldn't load it. I actually when we are, I'm switching the persona, but I just just now inserted and the ID which were the data was there previously. 
+Before I divided this category persona and entire everything is coming now based on the run ID. So I have to modify this accordingly. But how shall we the we proceed this like when we log into the system there itself shall we take the persona so that it will be clean everywhere. 
+
+ 
+Harshit Rajgarhia   17:50 
+No, no, it should not be at the login. It should be here only. 
+
+ 
+Rathlavath, Ramesh nayak   17:55 
+Like this only like whichever you select. 
+
+ 
+Harshit Rajgarhia   17:57 
+Yeah. 
+So here here it should be like it should not be like all this as it is. It should be like a persona drop down and they can select OK one one is like general OK which is which which is persona free. 
+
+ 
+Rathlavath, Ramesh nayak   18:07 
+Okay. 
+Thank you. 
+
+ 
+Harshit Rajgarhia   18:15 
+OK, and then user is free to select only one. It's not like they can select multiple, they can select only one persona and then they can start the conversation. 
+
+ 
+Rathlavath, Ramesh nayak   18:16 
+OK. 
+OK. 
+No. 
+OK. 
+
+ 
+Harshit Rajgarhia   18:32 
+But again, that's first. Don't worry about this UI and stuff. Always worry about your solution, OK? 
+
+ 
+Rathlavath, Ramesh nayak   18:44 
+OK. 
+
+ 
+Harshit Rajgarhia   18:46 
+Right now it's not happening. I mean, the persona is not kicking in. I get the same response for a sales and I get the same response for account manager, OK. 
+
+ 
+Rathlavath, Ramesh nayak   18:50 
+Mm-hmm. 
+OK, yeah, I I modify that data. 
+
+ 
+Harshit Rajgarhia   18:59 
+Yeah, but for AI researcher, it will be technically heavy. 
+
+ 
+Rathlavath, Ramesh nayak   19:04 
+Yes. 
+
+ 
+Harshit Rajgarhia   19:05 
+Yeah. 
+
+ 
+Rathlavath, Ramesh nayak   19:09 
+Yeah, we'll be working on these three items, so should work tomorrow morning. One is that audio one and and what what about this digest when you are saying this digest is a persona free only right or how shall we we give that option number? 
+
+ 
+Harshit Rajgarhia   19:15 
+Hmm. 
+Right now it's right now it's persona free. 
+
+ 
+Rathlavath, Ramesh nayak   19:26 
+Yes. 
+
+ 
+Harshit Rajgarhia   19:28 
+When when I say digest, OK, I don't mean only the audio book, I mean complete the digest, the PDF and the audio book. 
+
+ 
+Rathlavath, Ramesh nayak   19:39 
+OK, so now right now the PDF is also like. 
+
+ 
+Harshit Rajgarhia   19:41 
+For me, for me, yeah, for for me, that is the digest. OK. 
+
+ 
+Rathlavath, Ramesh nayak   19:47 
+OK. 
+So like what do you propose here? Shall we like it is personal free only for now or we shall we make this also? 
+
+ 
+Harshit Rajgarhia   19:55 
+Right now, yeah, right now it should be personal. 
+
+ 
+Rathlavath, Ramesh nayak   19:59 
+Audio also, right? 
+
+ 
+Harshit Rajgarhia   20:01 
+Yes. 
+
+ 
+Rathlavath, Ramesh nayak   20:02 
+OK, so then our action ID here. Oh yeah, go on. 
+
+ 
+Harshit Rajgarhia   20:03 
+But. 
+Yeah, go ahead with the action item. 
+
+ 
+Rathlavath, Ramesh nayak   20:08 
+Yeah, first one is we have to make the PDF as user friendly as possible. Whoever comes in user, we have to make them relevant to understand the information. 
+
+ 
+Harshit Rajgarhia   20:17 
+Yeah, yeah, give some gaps in your PDF as well. OK, your PDF is looking like a monolithic piece of code. 
+
+ 
+Rathlavath, Ramesh nayak   20:26 
+OK. 
+
+ 
+Harshit Rajgarhia   20:28 
+OK, give some gaps, make it readable. 
+
+ 
+Rathlavath, Ramesh nayak   20:32 
+OK. 
+Yeah, and second one is this interactive one which is persona based interaction. We we have to select one we and one is a general one and the user is bound to select any one of the persona, not a. 
+
+ 
+Harshit Rajgarhia   20:41 
+He. 
+Yeah. 
+Yes. 
+
+ 
+Rathlavath, Ramesh nayak   20:48 
+More than one. And here one doubt is that when we are changing the persona here, should this interaction with the different person also be visible or how it should be? It should not. 
+
+ 
+Harshit Rajgarhia   20:50 
+Yes, yes. 
+No, no, it should not. The user can only select one persona at a time. 
+
+ 
+Rathlavath, Ramesh nayak   21:07 
+OK, so none other uh information that is interacted with the other persona should be uh shown here the conversation. 
+
+ 
+Harshit Rajgarhia   21:08 
+So. 
+
+ 
+Rathlavath, Ramesh nayak   21:16 
+No other interaction. 
+
+ 
+Harshit Rajgarhia   21:17 
+See, there are two. There are two things. There are we are mixing two things. OK, first of all, a user will not see the data of other user. That is a different thing. OK, but one user can become a sales leader, interact something. 
+
+ 
+Rathlavath, Ramesh nayak   21:28 
+Mhm. 
+
+ 
+Harshit Rajgarhia   21:33 
+Then can become an AI researcher and interact something. But when it will go back to the sales, the information should persist. It should not go away. 
+It's like different threads. 
+
+ 
+Rathlavath, Ramesh nayak   21:46 
+Yeah, also OK, that's what I'm trying to say. Let's say I'm only here, so I'm I'm interacting in this research persona. Once I go back to the account manager, let's say I've changed my persona. Then should this researcher information should available for me here or not for me alone? 
+
+ 
+Harshit Rajgarhia   21:53 
+Yes, yes. 
+Yes, it should be. 
+
+ 
+Rathlavath, Ramesh nayak   22:04 
+OK, so based on the user, it should be based on the user. The calculation should persist. 
+
+ 
+Harshit Rajgarhia   22:07 
+Yeah, yeah. And not, yeah. And and also your chat history is not getting persisted, right? 
+For example. 
+
+ 
+Rathlavath, Ramesh nayak   22:19 
+It is now. 
+
+ 
+Harshit Rajgarhia   22:21 
+No, no. For example, when you interact with ChatGPT or cloud, there are threats. 
+Which gets established on your left vein, correct? So that is not getting established right now. So you have to take that also into picture because suppose I interacted with the system and I let's say I want to see what I interacted one week before. 
+
+ 
+Rathlavath, Ramesh nayak   22:31 
+Yeah. 
+Yes, yes. 
+
+ 
+Harshit Rajgarhia   22:49 
+OK. And then start the conversation from there only. 
+
+ 
+Rathlavath, Ramesh nayak   22:51 
+Mhm. 
+Got it. 
+
+ 
+Harshit Rajgarhia   22:58 
+Yeah. 
+
+ 
+Rathlavath, Ramesh nayak   23:00 
+Yeah, well. 
+
+ 
+Harshit Rajgarhia   23:00 
+So, so that is just data persistence and model state. 
+
+ 
+Rathlavath, Ramesh nayak   23:03 
+Yeah. 
+OK, good. So that is a second action item and third one is this making this work wise agent workable as we are expecting. So there is issues in that. So this is a third item. 
+
+ 
+Harshit Rajgarhia   23:07 
+OK. 
+Hmm. 
+Yes. 
+
+ 
+Rathlavath, Ramesh nayak   23:22 
+And then working along with the your team members for pushing the code and starting the deployments process as well. 
+
+ 
+Harshit Rajgarhia   23:28 
+Yes, yes. Mostly it will be ADF team only. Rani, I'll, I'll involve Rani. I'll she's a product manager. I'll involve her. She'll spin up a team and they will do the deployment, OK. 
+
+ 
+Rathlavath, Ramesh nayak   23:41 
+Yeah, OK. 
+
+ 
+Harshit Rajgarhia   23:43 
+So it doesn't stops, it just keeps listening. 
+
+ 
+Rathlavath, Ramesh nayak   23:46 
+Yeah, yeah, that is what is happening actually even though it is while answering. Also it is listening to the people if you are interrupting it in between. 
+
+ 
+Harshit Rajgarhia   23:50 
+Mhm. 
+Yeah, also it's we are multiple people interacting, right? Ideally it should be. Ideally to test this, only one person should interact. 
+
+ 
+Rathlavath, Ramesh nayak   24:04 
+Yes, yes. 
+Oh. 
+
+ 
+Harshit Rajgarhia   24:06 
+Yes. 
+
+ 
+Rathlavath, Ramesh nayak   24:08 
+Yeah, I'll read these three action items. We'll try to get them as close as possible as to the expectations. 
+
+ 
+Harshit Rajgarhia   24:14 
+Sounds, sounds, sounds good. OK. Anything else? Uh, actually I have to draw for another call. Anything else? 
+
+ 
+Rathlavath, Ramesh nayak   24:17 
+Yeah. 
+Yeah, no, no, yeah, yeah, we can, bro. 
+
+ 
+Harshit Rajgarhia   24:24 
+OK. OK. Then, yeah, let's, let's keep progressing and let's meet today tomorrow, OK. 
+
+ 
+Rathlavath, Ramesh nayak   24:29 
+Yeah. Thank you. 
+
+ 
+   24:31 
+That's it. 
+
+ 
+Harshit Rajgarhia   24:31 
+Thanks. 
+
+ 
+Rathlavath, Ramesh nayak stopped transcription 
