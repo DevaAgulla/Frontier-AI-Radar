@@ -195,6 +195,7 @@ interface VoicePresetInfo {
   label: string;
   gender: string;
   style: string;
+  region: string;
   is_ready: boolean;
   audio_url: string | null;
 }
@@ -428,10 +429,20 @@ function AudioModal({ runId, date, onClose }: { runId: string; date: string; onC
                   disabled={generating}
                   className="flex-1 px-3 py-2 rounded-lg text-xs border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--primary)] disabled:opacity-50 cursor-pointer"
                 >
-                  {presets.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.label}{v.is_ready ? " ✓" : ""}
-                    </option>
+                  {Object.entries(
+                    presets.reduce((acc, v) => {
+                      const r = v.region || "global";
+                      (acc[r] = acc[r] || []).push(v);
+                      return acc;
+                    }, {} as Record<string, VoicePresetInfo[]>)
+                  ).sort(([a], [b]) => a.localeCompare(b)).map(([region, voices]) => (
+                    <optgroup key={region} label={region.charAt(0).toUpperCase() + region.slice(1)}>
+                      {voices.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.label}{v.is_ready ? " ✓" : ""}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
 

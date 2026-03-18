@@ -7,7 +7,7 @@ import { useAuth } from "@/app/context/AuthContext";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type VoiceState = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "error";
+type VoiceState = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "cooldown" | "error";
 type TranscriptRole = "user" | "assistant" | "tool_status";
 
 interface Transcript {
@@ -164,12 +164,14 @@ export default function VoicePage() {
   const { run_id } = useParams<{ run_id: string }>();
   const { user }   = useAuth();
 
-  const [voiceState,  setVoiceState]  = useState<VoiceState>("connecting");
-  const [transcripts, setTranscripts] = useState<Transcript[]>([]);
-  const [statusLabel, setStatusLabel] = useState("Connecting…");
-  const [connected,   setConnected]   = useState(false);
-  const [errorMsg,    setErrorMsg]    = useState("");
-  const [interimText, setInterimText] = useState("");
+  const [voiceState,   setVoiceState]  = useState<VoiceState>("connecting");
+  const [transcripts,  setTranscripts] = useState<Transcript[]>([]);
+  const [statusLabel,  setStatusLabel] = useState("Preparing voice…");
+  const [connected,    setConnected]   = useState(false);
+  const [errorMsg,     setErrorMsg]    = useState("");
+  const [interimText,  setInterimText] = useState("");
+  const [idleMessage,  setIdleMessage] = useState("");
+  const [cooldownSecs, setCooldownSecs] = useState(3);
 
   // ── Refs ──────────────────────────────────────────────────────────────────────
   const roomRef             = useRef<any>(null);                  // livekit Room
@@ -181,12 +183,31 @@ export default function VoicePage() {
   const audioStoreRef       = useRef<VoiceAudioStore | null>(null);
   const connectedRef        = useRef(false);                      // mirror for callbacks
   const aiSpeakingRef       = useRef(false);
+  // Tracks attached audio elements by "identity:sid" key so we can detach/remove
+  // them properly on TrackUnsubscribed and on disconnect.
+  const audioElementsRef    = useRef<Map<string, HTMLAudioElement>>(new Map());
+  // Visibility-change handler ref so it can be removed on disconnect.
+  const visibilityHandlerRef = useRef<(() => void) | null>(null);
+  const cooldownTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wordRevealTimersRef  = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const agentAudioRef        = useRef<HTMLAudioElement | null>(null);
+  // Prevents concurrent _connect() calls (React Strict Mode fires useEffect twice).
+  // Two simultaneous connections to the same room creates two agent workers that
+  // fight each other → job executor marks both unresponsive → endless reconnect loop.
+  const connectingRef        = useRef(false);
+  // True once the user has provided a gesture (tap) that unlocked the AudioContext.
+  // Used by TrackSubscribed to decide whether to start muted or unmuted.
+  const audioUnlockedRef     = useRef(false);
   // ── Audio-text sync refs (Bug 3) ──────────────────────────────────────────────
   // word_token packets arrive ~500ms before TTS audio starts. We buffer them here
   // and only flush to the transcript bubble when tts_started fires — so text
   // appears at exactly the moment the voice begins playing.
   const pendingTokensRef    = useRef<string>("");   // buffered LLM tokens pre-TTS
   const ttsReadyRef         = useRef(false);        // true once TTS audio has started
+  // Fix 3 — dedup guard: prevents the same assistant message being pushed twice
+  // (race between tts_started flush and turn_done fallback). Keyed by first-50-char
+  // hash of content; cleared on every new "thinking" event.
+  const committedTurnsRef   = useRef<Set<string>>(new Set());
 
   // ── Init audio store ──────────────────────────────────────────────────────────
   useEffect(() => { audioStoreRef.current = new VoiceAudioStore(); }, []);
@@ -196,7 +217,16 @@ export default function VoicePage() {
     [transcripts, interimText]);
 
   // ── Cleanup on unmount ────────────────────────────────────────────────────────
-  useEffect(() => () => { _disconnect(); }, []);
+  useEffect(() => () => {
+    // Cancel all timers immediately — prevents phantom state updates after navigation
+    wordRevealTimersRef.current.forEach(clearTimeout);
+    wordRevealTimersRef.current = [];
+    if (cooldownTimerRef.current) {
+      clearInterval(cooldownTimerRef.current);
+      cooldownTimerRef.current = null;
+    }
+    _disconnect();
+  }, []);
 
   // ── Load voice history from API ───────────────────────────────────────────────
   const fetchHistory = useCallback(async () => {
@@ -249,13 +279,28 @@ export default function VoicePage() {
 
   // ── LiveKit connect ───────────────────────────────────────────────────────────
   const _connect = useCallback(async () => {
+    // Guard: if a connection attempt is already in progress, do nothing.
+    // React Strict Mode mounts → unmounts → mounts, firing useEffect twice.
+    // Without this guard, two _connect() calls race and spawn duplicate agents.
+    if (connectingRef.current) return;
+    connectingRef.current = true;
+
     setVoiceState("connecting");
     setStatusLabel("Connecting…");
     setErrorMsg("");
 
     try {
       // Dynamically import livekit-client to avoid SSR issues
-      const { Room, RoomEvent, Track } = await import("livekit-client");
+      const { Room, RoomEvent, Track, ConnectionState } = await import("livekit-client");
+
+      // Fix 3: tear down any existing room session before creating a new one.
+      // Without this, navigating between digests or re-clicking connect leaves
+      // the previous session alive — two sessions fight over the same room and
+      // destroy each other's Deepgram/ElevenLabs connections.
+      if (roomRef.current && roomRef.current.state !== ConnectionState.Disconnected) {
+        await roomRef.current.disconnect();
+        roomRef.current = null;
+      }
 
       // Get LiveKit token from our FastAPI endpoint
       const base       = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
@@ -275,111 +320,103 @@ export default function VoicePage() {
       }
       const { token, ws_url } = await tokenRes.json();
 
-      // Create and connect the LiveKit room
+      // Create and connect the LiveKit room.
+      // adaptiveStream and dynacast are VIDEO-only features — they pause tracks
+      // attached to hidden/off-screen elements. With adaptiveStream=true, our
+      // hidden <audio> element causes LiveKit to pause the agent's audio track.
+      // Disabled here: this is audio-only, no video tracks exist.
       const room = new Room({
-        adaptiveStream: true,
-        dynacast: true,
         audioCaptureDefaults: {
           noiseSuppression:  true,
-          echoCancellation:  true,   // prevents mic from picking up AI speaker output
+          echoCancellation:  true,
           autoGainControl:   true,
         },
       });
       roomRef.current = room;
 
       // ── Event: remote participant joins (agent connects) ────────────────────
-      room.on(RoomEvent.ParticipantConnected, () => {
-        setStatusLabel("Agent connected — speak now");
-        setVoiceState("idle");
+      // Do NOT set voiceState here — the backend sends state_change:idle
+      // via agent_state_changed (initializing→listening) ~50ms after joining.
+      // Setting state here races with that message and can cause a flicker or
+      // override a more specific state if the agent joins mid-reconnect.
+      room.on(RoomEvent.ParticipantConnected, (participant: any) => {
+        console.log("[LiveKitVoice][DIAG] ParticipantConnected:", participant.identity);
+        setStatusLabel("Agent ready…");
       });
 
-      // ── Event: agent audio track published ──────────────────────────────────
-      // LiveKit publishes ONE continuous audio track per participant for the whole
-      // session — it is never "ended" between utterances, just silent.
-      // We attach it once for playback; speaking state is tracked via
-      // ActiveSpeakersChanged (audio energy level) not via track lifecycle events.
-      const attachedTracks = new Set<string>();
-      room.on(RoomEvent.TrackSubscribed, (track: any, publication: any, participant: any) => {
-        if (track.kind !== Track.Kind.Audio) return;
-        const trackKey = participant.identity + ":" + track.sid;
-        if (attachedTracks.has(trackKey)) return; // already attached — never attach twice
-        attachedTracks.add(trackKey);
-        // Attach to a hidden <audio> element — LiveKit track.attach() returns
-        // an HTMLAudioElement and starts playback automatically after user gesture.
-        const audioEl = track.attach() as HTMLAudioElement;
-        audioEl.style.display = "none";
-        document.body.appendChild(audioEl);
-        // Ensure AudioContext is resumed (required after autoplay policy changes)
-        audioEl.play().catch(() => { /* browser will auto-play on next user gesture */ });
-      });
-
-      // ── Speaking state: use audio energy events, not track lifecycle ──────────
-      // ActiveSpeakersChanged fires in real-time as participants start/stop
-      // generating audio above the silence threshold. This is how all production
-      // voice SDKs (Alexa, Google Assistant, Siri SDK) track speaking state.
-      room.on(RoomEvent.ActiveSpeakersChanged, (speakers: any[]) => {
-        const agentSpeaking = speakers.some(
-          (p: any) => p.identity?.startsWith("agent")
-        );
-        if (agentSpeaking && !aiSpeakingRef.current) {
-          aiSpeakingRef.current = true;
-          setVoiceState("speaking");
-          setStatusLabel("Speaking… (speak to interrupt)");
-        } else if (!agentSpeaking && aiSpeakingRef.current) {
-          aiSpeakingRef.current = false;
-          // Don't override "thinking" — only transition from "speaking" to "listening"
-          setVoiceState(prev => prev === "speaking" ? "listening" : prev);
-          setStatusLabel(prev => prev.startsWith("Speaking") ? "Listening…" : prev);
+      room.on(RoomEvent.TrackSubscribed, (track: any) => {
+        if (track.kind === Track.Kind.Audio && agentAudioRef.current) {
+          // Attach to the stable <audio> element. LiveKit sets srcObject,
+          // autoplay=true, muted=false internally and queues play() via
+          // DeviceManager.onPlaybackAllowed — fired when room.startAudio() runs.
+          // Do NOT touch .muted here — it breaks LiveKit's internal flow.
+          track.attach(agentAudioRef.current);
         }
       });
 
-      // ── Event: transcription (user STT or agent TTS text) ───────────────────
+      room.on(RoomEvent.TrackUnsubscribed, (track: any) => {
+        if (track.kind === Track.Kind.Audio && agentAudioRef.current) {
+          track.detach(agentAudioRef.current);
+        }
+      });
+
+      // ── Visibility change: resume AudioContext when tab regains focus ─────────
+      // Some browsers (Firefox, Safari) suspend the AudioContext when the tab
+      // loses focus and do not auto-resume it. Calling room.startAudio() on
+      // visibilitychange ensures audio resumes when the user returns to the tab.
+      const visibilityHandler = () => {
+        if (document.visibilityState === "visible" && roomRef.current) {
+          roomRef.current.startAudio().catch(() => {});
+        }
+      };
+      document.addEventListener("visibilitychange", visibilityHandler);
+      visibilityHandlerRef.current = visibilityHandler;
+
+      // ── Event: transcription ────────────────────────────────────────────────
+      // sync_alignment=True on ElevenLabs TTS → LiveKit fires TranscriptionReceived
+      // for the agent with cumulative word text as each audio chunk plays.
+      // We use these to update the streaming bubble in real-time — no estimation,
+      // no timers, inherently synced to the actual audio.
+      // User (Deepgram STT) segments are handled in the else-branch below.
       room.on(RoomEvent.TranscriptionReceived, (segments: any[], participant: any) => {
         const isAgent = participant?.identity?.startsWith("agent");
+
+        // ── Agent word-reveal via ElevenLabs alignment ──────────────────────
+        if (isAgent) {
+          segments.forEach((seg: any) => {
+            if (!seg.text) return;
+            setTranscripts(prev => {
+              const next = [...prev];
+              const idx  = streamingIdxRef.current;
+              // Only update while bubble is still streaming (turn_done may have
+              // already finalized it with the authoritative LLM text).
+              if (idx >= 0 && next[idx] && next[idx].streaming) {
+                next[idx] = { ...next[idx], text: seg.text };
+              }
+              return next;
+            });
+          });
+          return;
+        }
+
         segments.forEach(seg => {
           if (!seg.final) {
-            // Interim — show as interimText
-            if (!isAgent) setInterimText(seg.text);
+            setInterimText(seg.text);
             return;
           }
           setInterimText("");
-
-          if (!isAgent) {
-            // User utterance finalised
-            if (isStopCommand(seg.text)) {
-              setVoiceState("idle");
-              setStatusLabel("Tap to speak");
-              return;
-            }
-            const uIdx = userTurnRef.current;
-            userTurnRef.current += 1;
-            setTranscripts(prev => [
-              ...prev,
-              { role: "user", text: seg.text, timestamp: new Date() },
-            ]);
-            setVoiceState("thinking");
-            setStatusLabel("Thinking…");
-          } else {
-            // Agent TTS transcription — only used as a fallback when word_token
-            // data packets didn't arrive (e.g. backend not streaming).
-            // If word_token already created/populated the bubble (idx >= 0 or sentinel -2),
-            // skip to avoid duplicating text that word_token already streamed.
-            const idx = streamingIdxRef.current;
-            if (idx === -1) {
-              // No word_token bubble yet — create one from TTS transcription
-              streamingIdxRef.current = -2; // sentinel
-              assistantTurnRef.current += 1;
-              setTranscripts(prev => {
-                const next = [
-                  ...prev,
-                  { role: "assistant" as const, text: seg.text, streaming: true, timestamp: new Date() },
-                ];
-                streamingIdxRef.current = next.length - 1;
-                return next;
-              });
-            }
-            // idx >= 0 or -2: word_token already streamed this text — skip
+          if (isStopCommand(seg.text)) {
+            setVoiceState("idle");
+            setStatusLabel("Tap to speak");
+            return;
           }
+          userTurnRef.current += 1;
+          setTranscripts(prev => [
+            ...prev,
+            { role: "user", text: seg.text, timestamp: new Date() },
+          ]);
+          setVoiceState("thinking");
+          setStatusLabel("Thinking…");
         });
       });
 
@@ -387,17 +424,23 @@ export default function VoicePage() {
       room.on(RoomEvent.DataReceived, (payload: Uint8Array, participant: any) => {
         try {
           const msg = JSON.parse(new TextDecoder().decode(payload));
+          if (["tts_started", "tts_stopped", "thinking", "turn_done"].includes(msg.type)) {
+            console.log("[LiveKitVoice][DIAG] DataReceived:", msg.type, "from:", participant?.identity);
+          }
           _handleDataMsg(msg);
         } catch {}
       });
 
       // ── Event: connection state ───────────────────────────────────────────────
       room.on(RoomEvent.Disconnected, () => {
-        connectedRef.current = false;
+        const wasConnected   = connectedRef.current;
+        connectedRef.current  = false;
+        aiSpeakingRef.current = false;
         setConnected(false);
         setVoiceState("idle");
-        setStatusLabel("Disconnected");
-        aiSpeakingRef.current = false;
+        // "Session ended" for natural / farewell-driven close; "Disconnected" for
+        // unexpected drops so the user knows something went wrong.
+        setStatusLabel(wasConnected ? "Session ended — tap to start again" : "Disconnected");
       });
 
       room.on(RoomEvent.Reconnecting, () => {
@@ -406,20 +449,25 @@ export default function VoicePage() {
       });
 
       room.on(RoomEvent.Reconnected, () => {
-        setStatusLabel("Listening…");
-        setVoiceState("listening");
+        setStatusLabel("Reconnected — waiting for agent…");
+        setVoiceState("connecting");
       });
 
       // Connect to room
       await room.connect(ws_url, token);
+      // NOTE: room.startAudio() is intentionally NOT called here.
+      // startAudio() unlocks the browser AudioContext and MUST be called from
+      // a direct user-gesture handler (button click). This function is now called
+      // from background useEffect, so startAudio is deferred to handleTapToSpeak
+      // / handleMicPress which always run inside a click handler.
 
-      // Enable microphone — LiveKit handles STT via the agent subscribing to this track
-      await room.localParticipant.setMicrophoneEnabled(true);
+      // Mic is enabled in handleTapToSpeak (inside user gesture) not here.
+      // Enabling it here (background) causes browser permission issues on first visit.
 
       connectedRef.current = true;
       setConnected(true);
-      setVoiceState("listening");
-      setStatusLabel("Listening…");
+      setVoiceState("connecting");   // backend will send state_change:idle shortly
+      setStatusLabel("Agent connecting…");
 
       console.log("[LiveKitVoice] Connected to room:", room.name);
     } catch (err: any) {
@@ -427,139 +475,162 @@ export default function VoicePage() {
       setVoiceState("error");
       setErrorMsg(err?.message || "Failed to connect to voice service");
       setStatusLabel("Connection failed");
+    } finally {
+      connectingRef.current = false;
     }
   }, [run_id, user?.id]);
 
   // ── Handle data messages from the agent ──────────────────────────────────────
   const _handleDataMsg = useCallback((msg: any) => {
-    switch (msg.type) {
-      case "thinking":
-        aiSpeakingRef.current   = false;
-        streamingIdxRef.current = -1;
-        // Reset audio-text sync state for the new turn
-        ttsReadyRef.current     = false;
-        pendingTokensRef.current = "";
-        setVoiceState("thinking");
-        setStatusLabel("Thinking…");
-        break;
+    // Helper: clear any running cooldown countdown timer
+    const _clearCooldown = () => {
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+        cooldownTimerRef.current = null;
+      }
+    };
 
-      // ── word_token: each LLM output token forwarded for real-time transcript sync.
-      // Bug 3 fix: tokens arrive ~500ms before TTS audio. We buffer them until
-      // tts_started fires, then flush — so text appears when voice begins, not before.
-      case "word_token": {
-        const token = msg.text || "";
-        if (!token) break;
-        if (!ttsReadyRef.current) {
-          // TTS not started yet — buffer the token, don't render
-          pendingTokensRef.current += token;
-          break;
+    switch (msg.type) {
+
+      // ── PRIMARY: backend state machine driver ─────────────────────────────────
+      // All voice state transitions flow through state_change messages.
+      // word_token / turn_done handle text only; state_change handles UI state.
+      case "state_change": {
+        const s: VoiceState = msg.state;
+        _clearCooldown();
+
+        // Cancel any pending word-reveal timers whenever leaving speaking state
+        if (s !== "speaking") {
+          wordRevealTimersRef.current.forEach(clearTimeout);
+          wordRevealTimersRef.current = [];
         }
-        // TTS is playing — render immediately
-        const idx = streamingIdxRef.current;
-        if (idx === -1) {
-          streamingIdxRef.current = -2; // sentinel
-          assistantTurnRef.current += 1;
-          setTranscripts(prev => {
-            const next = [
-              ...prev,
-              { role: "assistant" as const, text: token, streaming: true, timestamp: new Date() },
-            ];
-            streamingIdxRef.current = next.length - 1;
-            return next;
-          });
-        } else if (idx >= 0) {
+
+        if (s === "thinking") {
+          aiSpeakingRef.current    = false;
+          streamingIdxRef.current  = -1;
+          ttsReadyRef.current      = false;
+          pendingTokensRef.current = "";
+          committedTurnsRef.current.clear();
+          setVoiceState("thinking");
+          setStatusLabel("Thinking…");
+
+        } else if (s === "speaking") {
+          // Create empty streaming bubble. Word-by-word reveal is driven by
+          // TranscriptionReceived (agent) events — ElevenLabs sync_alignment=True
+          // sends word timing alongside audio chunks so text is naturally synced
+          // to the actual audio playback with no estimation needed.
+          ttsReadyRef.current = true;
+          const buffered = pendingTokensRef.current;
+          pendingTokensRef.current = "";
+          if (buffered) {
+            const dedupKey = buffered.slice(0, 50);
+            if (!committedTurnsRef.current.has(dedupKey)) {
+              committedTurnsRef.current.add(dedupKey);
+              assistantTurnRef.current += 1;
+              streamingIdxRef.current = -2;
+              setTranscripts(prev => {
+                const next = [...prev, {
+                  role: "assistant" as const, text: "",
+                  streaming: true, timestamp: new Date(),
+                }];
+                streamingIdxRef.current = next.length - 1;
+                return next;
+              });
+            }
+          }
+          aiSpeakingRef.current = true;
+          // Audio stream now has data — ensure the element is unmuted and playing.
+          // This is the definitive play() call: the agent IS speaking right now,
+          // so the MediaStream is active and the browser won't block playback.
+          if (agentAudioRef.current) {
+            agentAudioRef.current.muted = false;
+            agentAudioRef.current.play().catch(() => {});
+          }
+          setVoiceState("speaking");
+          setStatusLabel("Speaking…");
+
+        } else if (s === "cooldown") {
+          // Finalize the streaming bubble (TTS audio ended)
+          ttsReadyRef.current   = false;
+          aiSpeakingRef.current = false;
           setTranscripts(prev => {
             const next = [...prev];
-            if (next[idx]) next[idx] = { ...next[idx], text: next[idx].text + token };
+            const idx  = streamingIdxRef.current;
+            if (idx >= 0 && next[idx]?.streaming) {
+              next[idx] = { ...next[idx], streaming: false };
+            } else if (idx === -2) {
+              const lastIdx = [...next].reverse().findIndex(t => t.role === "assistant" && t.streaming);
+              const real    = lastIdx >= 0 ? next.length - 1 - lastIdx : -1;
+              if (real >= 0) next[real] = { ...next[real], streaming: false };
+            }
             return next;
           });
+          setVoiceState("cooldown");
+          setStatusLabel("Listening for follow-up…");
+          // 3-second countdown display
+          setCooldownSecs(3);
+          cooldownTimerRef.current = setInterval(() => {
+            setCooldownSecs(prev => {
+              if (prev <= 1) {
+                clearInterval(cooldownTimerRef.current!);
+                cooldownTimerRef.current = null;
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+
+        } else if (s === "idle") {
+          ttsReadyRef.current   = false;
+          aiSpeakingRef.current = false;
+          if (msg.message) setIdleMessage(msg.message);
+          setVoiceState("idle");
+          setStatusLabel("Tap to speak");
+
+        } else if (s === "listening") {
+          ttsReadyRef.current   = false;
+          aiSpeakingRef.current = false;
+          // Reset audio playhead so next response starts cleanly
+          if (agentAudioRef.current) agentAudioRef.current.currentTime = 0;
+          setIdleMessage("");
+          setVoiceState("listening");
+          setStatusLabel("Listening…");
         }
-        // idx === -2: sentinel in progress — skip, next token will use the real index
         break;
       }
 
-      // ── tts_started: TTS audio has begun playing in the room.
-      // Flush the buffered LLM tokens into the transcript bubble now — this ensures
-      // text appears at exactly the moment the voice starts.
-      case "tts_started": {
-        ttsReadyRef.current = true;
-        const buffered = pendingTokensRef.current;
-        pendingTokensRef.current = "";
-        if (buffered) {
-          streamingIdxRef.current = -2; // sentinel
-          assistantTurnRef.current += 1;
-          setTranscripts(prev => {
-            const next = [
-              ...prev,
-              { role: "assistant" as const, text: buffered, streaming: true, timestamp: new Date() },
-            ];
-            streamingIdxRef.current = next.length - 1;
-            return next;
-          });
-        }
-        setVoiceState("speaking");
-        setStatusLabel("Speaking… (speak to interrupt)");
+      // ── word_token: buffer ALL tokens — never render on token events.
+      // Voice leads; text follows. The full buffer is flushed when state:speaking fires.
+      case "word_token": {
+        const token = msg.text || "";
+        if (token) pendingTokensRef.current += token;
         break;
       }
 
-      // ── tts_stopped: TTS audio has finished. Finalize any open streaming bubble.
-      // This complements turn_done — tts_stopped is audio-driven (fires when silence
-      // returns), turn_done is LLM-driven (fires when token generation ends).
-      case "tts_stopped": {
+      // ── turn_done: LLM stream finished — finalize the transcript bubble text.
+      // Does NOT change voice state (state_change:cooldown handles that).
+      case "turn_done":
         ttsReadyRef.current = false;
         setTranscripts(prev => {
           const next = [...prev];
           const idx  = streamingIdxRef.current;
-          if (idx >= 0 && next[idx]?.streaming) {
-            next[idx] = { ...next[idx], streaming: false };
-          } else if (idx === -2) {
-            const lastStreaming = [...next].reverse().findIndex(t => t.role === "assistant" && t.streaming);
-            const realIdx = lastStreaming >= 0 ? next.length - 1 - lastStreaming : -1;
-            if (realIdx >= 0) next[realIdx] = { ...next[realIdx], streaming: false };
-          }
-          return next;
-        });
-        streamingIdxRef.current = -1;
-        aiSpeakingRef.current   = false;
-        setVoiceState("listening");
-        setStatusLabel("Listening…");
-        break;
-      }
-
-      case "turn_done":
-        ttsReadyRef.current = false;   // reset sync state for next turn
-        setTranscripts(prev => {
-          const next = [...prev];
-          const idx  = streamingIdxRef.current;
           if (idx >= 0 && next[idx]) {
-            // word_token already built the text — just finalize streaming state.
-            // Only use msg.text if the bubble is empty (word_tokens never arrived).
-            const builtText = next[idx].text;
-            next[idx] = { ...next[idx], text: builtText || msg.text || "", streaming: false };
+            // Normal: update with complete LLM text and mark done
+            next[idx] = { ...next[idx], streaming: false, text: msg.text || next[idx].text };
           } else if (idx === -2) {
-            // Bubble creation was in progress — find and finalize it
-            const lastStreaming = [...next].reverse().findIndex(t => t.role === "assistant" && t.streaming);
-            const realIdx = lastStreaming >= 0 ? next.length - 1 - lastStreaming : -1;
-            if (realIdx >= 0) {
-              next[realIdx] = { ...next[realIdx], streaming: false };
-            } else if (msg.text) {
+            const lastIdx = [...next].reverse().findIndex(t => t.role === "assistant" && t.streaming);
+            const real    = lastIdx >= 0 ? next.length - 1 - lastIdx : -1;
+            if (real >= 0) next[real] = { ...next[real], streaming: false, text: msg.text || next[real].text };
+          } else if (idx === -1 && msg.text) {
+            // Fallback: TTS never fired — create completed bubble directly
+            const dedupKey = (msg.text as string).slice(0, 50);
+            if (!committedTurnsRef.current.has(dedupKey)) {
+              committedTurnsRef.current.add(dedupKey);
               next.push({ role: "assistant" as const, text: msg.text, streaming: false, timestamp: new Date() });
             }
-          } else if (msg.text) {
-            // word_tokens never arrived — create completed bubble from full text
-            next.push({ role: "assistant" as const, text: msg.text, streaming: false, timestamp: new Date() });
           }
           return next;
         });
-        streamingIdxRef.current = -1;
-        // Only transition to "listening" if the agent ISN'T currently speaking.
-        // turn_done fires when LLM text generation finishes — TTS audio may still
-        // be playing. tts_stopped will transition to "listening" when audio ends.
-        if (!aiSpeakingRef.current) {
-          setVoiceState("listening");
-          setStatusLabel("Listening…");
-        }
-        aiSpeakingRef.current = false; // allow ActiveSpeakersChanged to re-evaluate
         break;
 
       case "tool_status": {
@@ -580,6 +651,13 @@ export default function VoicePage() {
         break;
       }
 
+      case "session_end":
+        _clearCooldown();
+        setStatusLabel("Session ended — goodbye!");
+        setVoiceState("idle");
+        setTimeout(() => { roomRef.current?.disconnect().catch(() => {}); }, 1000);
+        break;
+
       case "error":
         setErrorMsg(msg.message || "Unknown agent error");
         break;
@@ -588,6 +666,20 @@ export default function VoicePage() {
 
   // ── Disconnect ────────────────────────────────────────────────────────────────
   const _disconnect = useCallback(async () => {
+    // Cancel all pending timers so no phantom state updates fire after disconnect
+    wordRevealTimersRef.current.forEach(clearTimeout);
+    wordRevealTimersRef.current = [];
+    if (cooldownTimerRef.current) {
+      clearInterval(cooldownTimerRef.current);
+      cooldownTimerRef.current = null;
+    }
+
+    // Remove visibility handler before disconnecting
+    if (visibilityHandlerRef.current) {
+      document.removeEventListener("visibilitychange", visibilityHandlerRef.current);
+      visibilityHandlerRef.current = null;
+    }
+
     if (roomRef.current) {
       try {
         await roomRef.current.disconnect();
@@ -602,31 +694,81 @@ export default function VoicePage() {
     aiSpeakingRef.current = false;
   }, []);
 
-  // ── Auto-connect + history on mount ──────────────────────────────────────────
+  // ── Pre-warm: connect in background on page mount ─────────────────────────────
+  // We start the LiveKit connection as soon as the page loads — BEFORE the user
+  // clicks anything. By the time they tap "Tap to Speak", the WebSocket is open,
+  // the agent is spawned, and Deepgram + ElevenLabs are initialised.
+  // The only operation we defer to the click handler is room.startAudio() (which
+  // unlocks the browser AudioContext and legally requires a user gesture).
   useEffect(() => {
-    _connect();
     fetchHistory();
+    _connect().catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run_id]);
 
-  // ── Mic button handler ────────────────────────────────────────────────────────
+  // ── Mic / connect button ─────────────────────────────────────────────────────
+  // Only used as a fallback when the background pre-connect failed or the user
+  // explicitly wants to reconnect. Interrupt and tap-to-speak handled below.
   const handleMicPress = useCallback(async () => {
-    if (!connected) { await _connect(); return; }
-
-    if (voiceState === "speaking" && roomRef.current) {
-      // User tapped mic during agent speech — signal interrupt via data message
-      // LiveKit's VAD handles full-duplex interrupt automatically,
-      // but this provides an explicit tap-to-interrupt fallback.
-      try {
-        const payload = new TextEncoder().encode(JSON.stringify({ type: "interrupt" }));
-        await roomRef.current.localParticipant.publishData(payload, { reliable: true });
-      } catch {}
-      aiSpeakingRef.current = false;
-      setVoiceState("listening");
-      setStatusLabel("Listening…");
+    if (!connected) await _connect();
+    audioUnlockedRef.current = true;
+    roomRef.current?.startAudio().catch(() => {});
+    if (agentAudioRef.current) {
+      agentAudioRef.current.muted = false;
+      agentAudioRef.current.play().catch(() => {});
     }
-    // In LiveKit mode, the mic is always on and VAD handles turn detection.
-    // The mic button is a visual indicator + explicit interrupt only.
-  }, [connected, voiceState, _connect]);
+  }, [connected, _connect]);
+
+  // ── Tap to Speak — published from idle/cooldown state ────────────────────────
+  const handleTapToSpeak = useCallback(async () => {
+    // Edge case: background pre-connect failed — run it now inside user gesture
+    if (!connected) await _connect();
+    audioUnlockedRef.current = true;
+    if (roomRef.current) {
+      roomRef.current.startAudio().catch(() => {});
+      roomRef.current.localParticipant?.setMicrophoneEnabled(true).catch(() => {});
+    }
+    // Belt-and-suspenders: ensure the audio element is unmuted and playing.
+    // startAudio() above unlocks LiveKit's DeviceManager (handles future tracks).
+    // This explicit play() handles the case where the track is already attached.
+    if (agentAudioRef.current) {
+      agentAudioRef.current.muted = false;
+      agentAudioRef.current.play().catch(() => {});
+    }
+    try {
+      const payload = new TextEncoder().encode(JSON.stringify({ type: "tap_to_speak" }));
+      await roomRef.current!.localParticipant.publishData(payload, { reliable: true });
+    } catch {}
+    setVoiceState("listening");
+    setStatusLabel("Listening…");
+  }, [connected, _connect]);
+
+  // ── Tap to Interrupt — hard stop: audio + timers + UI all killed immediately ──
+  const handleInterrupt = useCallback(async () => {
+    // 1. Stop browser audio immediately — no waiting for backend
+    if (agentAudioRef.current) {
+      agentAudioRef.current.pause();
+      agentAudioRef.current.currentTime = 0;
+    }
+
+    // 2. Cancel all pending word-reveal timers — text stops at current word
+    wordRevealTimersRef.current.forEach(clearTimeout);
+    wordRevealTimersRef.current = [];
+
+    // 3. Discard any buffered tokens
+    pendingTokensRef.current = "";
+
+    // 4. Update UI immediately — user sees listening state before backend responds
+    aiSpeakingRef.current = false;
+    setVoiceState("listening");
+    setStatusLabel("Listening…");
+
+    // 5. Tell backend to stop (async cleanup — UI already updated above)
+    try {
+      const payload = new TextEncoder().encode(JSON.stringify({ type: "user_interrupt" }));
+      await roomRef.current?.localParticipant.publishData(payload, { reliable: true });
+    } catch {}
+  }, []);
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -636,6 +778,7 @@ export default function VoicePage() {
     listening:  "bg-green-500 animate-pulse",
     thinking:   "bg-orange-400",
     speaking:   "bg-blue-500 animate-pulse",
+    cooldown:   "bg-green-400",
     error:      "bg-red-500",
   };
 
@@ -653,6 +796,12 @@ export default function VoicePage() {
 
   return (
     <div className="flex flex-col h-screen bg-[var(--bg-main)]">
+
+      {/* Stable audio element — always in DOM so TrackSubscribed can attach to it immediately.
+          No style override: <audio> without controls renders as 0×0 naturally.
+          display:none would trigger LiveKit's adaptiveStream to pause the track. */}
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <audio ref={agentAudioRef} autoPlay playsInline />
 
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] bg-[var(--bg-card)]">
@@ -677,8 +826,14 @@ export default function VoicePage() {
             >Clear</button>
           )}
           <div className="flex items-center gap-1.5">
-            <div className={`w-2 h-2 rounded-full transition-colors ${connected ? "bg-green-500" : "bg-gray-400"}`}/>
-            <span className="text-xs text-[var(--text-secondary)]">{connected ? "Connected" : "Connecting…"}</span>
+            <div className={`w-2 h-2 rounded-full transition-colors ${
+              voiceState === "error"      ? "bg-red-500" :
+              voiceState === "connecting" ? "bg-yellow-400 animate-pulse" :
+              connected                   ? "bg-green-500" : "bg-gray-400"
+            }`}/>
+            <span className="text-xs text-[var(--text-secondary)]">
+              {voiceState === "error" ? "Error" : connected ? "Connected" : "Connecting…"}
+            </span>
           </div>
         </div>
       </div>
@@ -690,8 +845,9 @@ export default function VoicePage() {
             <div className="text-4xl mb-3">🎙️</div>
             <p className="font-medium text-base text-[var(--text-primary)]">Voice Agent</p>
             <p className="mt-1 text-xs max-w-xs mx-auto leading-relaxed opacity-70">
-              Fully hands-free. Radar will start listening automatically.
-              Speak any time — even while Radar is talking — to interrupt.
+              Agent is connecting in the background. Tap the mic button when
+              it appears to start speaking. After each answer Radar listens
+              3 s for follow-ups.
             </p>
           </div>
         )}
@@ -769,33 +925,107 @@ export default function VoicePage() {
         </div>
       )}
 
-      {/* Mic button */}
-      <div className="flex flex-col items-center pb-10 pt-4 gap-3">
+      {/* Voice controls — pb-safe covers iOS home-bar notch */}
+      <div className="flex flex-col items-center pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-4 gap-3">
         <p className="text-xs text-[var(--text-secondary)] h-4">{statusLabel}</p>
 
-        <button
-          onClick={handleMicPress}
-          disabled={voiceState === "thinking" || voiceState === "connecting"}
-          className={`w-20 h-20 rounded-full flex items-center justify-center text-white shadow-lg
-            transition-all ${stateColor[voiceState]} hover:opacity-90 active:scale-95
-            disabled:opacity-50 disabled:cursor-not-allowed`}
-          aria-label={voiceState === "speaking" ? "Interrupt agent" : "Voice status"}
-        >
-          {voiceState === "thinking"
-            ? <span className="flex gap-1">{[0,100,200].map(d => (
-                <span key={d} className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }}/>
-              ))}</span>
-            : micIcon}
-        </button>
-
-        {voiceState === "speaking" && (
-          <p className="text-[10px] text-[var(--text-secondary)] text-center max-w-[200px] leading-relaxed opacity-70">
-            Just speak to interrupt at any time
-          </p>
+        {/* ── Not connected: connect button ── */}
+        {!connected && (
+          <button
+            onClick={handleMicPress}
+            disabled={voiceState === "connecting"}
+            className={`w-20 h-20 rounded-full flex items-center justify-center text-white shadow-lg
+              transition-all ${voiceState === "connecting" ? "bg-yellow-400 animate-pulse" : "bg-[var(--primary)]"}
+              hover:opacity-90 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}
+            aria-label="Connect to voice agent"
+          >
+            {voiceState === "connecting"
+              ? <span className="flex gap-1">{[0,100,200].map(d => (
+                  <span key={d} className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }}/>
+                ))}</span>
+              : micIcon}
+          </button>
         )}
-        {voiceState === "listening" && (
-          <p className="text-[10px] text-[var(--text-secondary)] text-center max-w-[200px] leading-relaxed opacity-70">
-            Mic always on · Deepgram VAD detects when you speak
+
+        {/* ── CONNECTING (room joined, waiting for agent state) ── */}
+        {connected && voiceState === "connecting" && (
+          <div className="w-20 h-20 rounded-full flex items-center justify-center bg-yellow-400 animate-pulse shadow-lg text-white">
+            <span className="flex gap-1">{[0,100,200].map(d => (
+              <span key={d} className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }}/>
+            ))}</span>
+          </div>
+        )}
+
+        {/* ── IDLE: Tap to Speak ── */}
+        {connected && voiceState === "idle" && (
+          <button
+            onClick={handleTapToSpeak}
+            className="w-20 h-20 rounded-full flex items-center justify-center text-white shadow-lg
+              bg-[var(--primary)] hover:opacity-90 active:scale-95 transition-all"
+            aria-label="Tap to speak"
+          >
+            {micIcon}
+          </button>
+        )}
+
+        {/* ── LISTENING: pulsing green mic ── */}
+        {connected && voiceState === "listening" && (
+          <div className="w-20 h-20 rounded-full flex items-center justify-center text-white bg-green-500 shadow-lg animate-pulse">
+            {micIcon}
+          </div>
+        )}
+
+        {/* ── THINKING: bouncing dots ── */}
+        {connected && voiceState === "thinking" && (
+          <div className="w-20 h-20 rounded-full flex items-center justify-center bg-orange-400 shadow-lg">
+            <span className="flex gap-1">{[0,100,200].map(d => (
+              <span key={d} className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }}/>
+            ))}</span>
+          </div>
+        )}
+
+        {/* ── SPEAKING: Tap to Interrupt button ── */}
+        {connected && voiceState === "speaking" && (
+          <button
+            onClick={handleInterrupt}
+            className="px-6 py-3 rounded-full border-2 border-red-400 text-red-500 text-sm font-semibold
+              hover:bg-red-50 active:scale-95 transition-all shadow-sm"
+            aria-label="Interrupt agent"
+          >
+            Tap to Interrupt
+          </button>
+        )}
+
+        {/* ── COOLDOWN: dimmer pulsing mic + countdown ── */}
+        {connected && voiceState === "cooldown" && (
+          <>
+            <div className="w-20 h-20 rounded-full flex items-center justify-center text-white bg-green-400 opacity-60 shadow-lg animate-pulse">
+              {micIcon}
+            </div>
+            {cooldownSecs > 0 && (
+              <p className="text-[10px] text-[var(--text-secondary)] opacity-60">
+                Follow-up? {cooldownSecs}s…
+              </p>
+            )}
+          </>
+        )}
+
+        {/* ── ERROR: retry button ── */}
+        {voiceState === "error" && (
+          <button
+            onClick={() => { setErrorMsg(""); _connect(); }}
+            className="w-20 h-20 rounded-full flex items-center justify-center text-white shadow-lg
+              bg-red-500 hover:opacity-90 active:scale-95 transition-all"
+            aria-label="Retry connection"
+          >
+            {micIcon}
+          </button>
+        )}
+
+        {/* Farewell / idle message */}
+        {connected && voiceState === "idle" && idleMessage && (
+          <p className="text-xs text-[var(--text-secondary)] text-center max-w-[200px] leading-relaxed opacity-70 mt-1">
+            {idleMessage}
           </p>
         )}
 
